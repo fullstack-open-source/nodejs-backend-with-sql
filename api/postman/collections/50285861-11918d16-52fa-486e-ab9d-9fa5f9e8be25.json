@@ -1459,60 +1459,6 @@
 					"response": []
 				},
 				{
-					"name": "get-user-profile Copy",
-					"id": "50285861-956ca3cf-6fb9-4cfa-a135-e36e5740c031",
-					"protocolProfileBehavior": {
-						"disableBodyPruning": true
-					},
-					"request": {
-						"auth": {
-							"type": "bearer",
-							"bearer": [
-								{
-									"key": "token",
-									"value": "{{access_token}}",
-									"type": "string"
-								}
-							]
-						},
-						"method": "GET",
-						"header": [],
-						"body": {
-							"mode": "raw",
-							"raw": "",
-							"options": {
-								"raw": {
-									"language": "json"
-								}
-							}
-						},
-						"url": {
-							"raw": "{{domain.com}}/{{mode}}/activity/users/169ba70d-b3d8-413b-b07c-7413b9539c4b/logs?limit=50&offset=0",
-							"host": [
-								"{{domain.com}}"
-							],
-							"path": [
-								"{{mode}}",
-								"activity",
-								"users",
-								"169ba70d-b3d8-413b-b07c-7413b9539c4b",
-								"logs"
-							],
-							"query": [
-								{
-									"key": "limit",
-									"value": "50"
-								},
-								{
-									"key": "offset",
-									"value": "0"
-								}
-							]
-						}
-					},
-					"response": []
-				},
-				{
 					"name": "get-settings",
 					"id": "50285861-09503e96-d833-4b97-b4aa-ff37a4b5f545",
 					"protocolProfileBehavior": {
