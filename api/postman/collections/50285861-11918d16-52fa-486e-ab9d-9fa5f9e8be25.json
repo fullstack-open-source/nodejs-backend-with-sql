@@ -880,7 +880,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"user_id\": \"mrdasdeveloper@gmail.com\",\n  \"channel\": \"email\",\n  \"otp\": \"123456\"\n}",
+							"raw": "{\n  \"user_id\": \"mrdasdeveloper1@gmail.com\",\n  \"channel\": \"email\",\n  \"otp\": \"123456\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
