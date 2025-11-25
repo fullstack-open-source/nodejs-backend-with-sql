@@ -1487,7 +1487,7 @@
 							}
 						},
 						"url": {
-							"raw": "{{domain.com}}/{{mode}}/activity/users/9c93cc19-7325-45e4-8f03-7ea80850170d/logs?limit=50&offset=0",
+							"raw": "{{domain.com}}/{{mode}}/activity/users/169ba70d-b3d8-413b-b07c-7413b9539c4b/logs?limit=50&offset=0",
 							"host": [
 								"{{domain.com}}"
 							],
@@ -1495,7 +1495,7 @@
 								"{{mode}}",
 								"activity",
 								"users",
-								"9c93cc19-7325-45e4-8f03-7ea80850170d",
+								"169ba70d-b3d8-413b-b07c-7413b9539c4b",
 								"logs"
 							],
 							"query": [
