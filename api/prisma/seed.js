@@ -42,6 +42,7 @@ async function pushSchema() {
   try {
     logger.info('Pushing schema to database...');
     
+   
     // Use Prisma db push to sync schema
     execSync('npx prisma db push', { 
       stdio: 'inherit',
@@ -59,6 +60,15 @@ async function pushSchema() {
     logger.info('Prisma Client generated successfully');
   } catch (error) {
     logger.error('Failed to push schema', { error: error.message });
+    
+    // Provide helpful error message for Supabase pooler issue
+    if (error.message && error.message.includes('prepared statement')) {
+      logger.error('');
+      logger.error('   Update DATABASE_URL in your .env file to use direct connection:');
+      logger.error('   DATABASE_URL=postgresql://postgres:password@db.xxxxx.supabase.co:5432/postgres');
+      logger.error('   (Use port 5432 for direct connection, not 6543 for pooler)');
+    }
+    
     throw error;
   }
 }

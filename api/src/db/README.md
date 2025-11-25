@@ -45,6 +45,10 @@ DATABASE_NAME=dbname
 DATABASE_USER=user
 DATABASE_PASSWORD=password
 
+# IMPORTANT: For Supabase or connection poolers, use DIRECT connection in DATABASE_URL
+# Pooler connections (port 6543) don't support prepared statements required by Prisma migrations
+# Use direct connection (port 5432) instead
+
 # Optional PostgreSQL settings
 DATABASE_SSL=false
 DB_POOL_MAX=20
@@ -52,6 +56,46 @@ DB_POOL_MIN=2
 DB_POOL_IDLE_TIMEOUT=30000
 DB_POOL_CONNECTION_TIMEOUT=10000
 ```
+
+## Supabase & Connection Pooler Configuration
+
+### Issue: Prepared Statement Error with Poolers
+
+If you're using **Supabase** or other connection poolers (like PgBouncer), you may encounter this error when running migrations:
+
+```
+ERROR: prepared statement "s1" already exists
+```
+
+This happens because:
+- Connection poolers don't support prepared statements
+- Prisma migrations require prepared statements
+- Pooler connections reuse statement names causing conflicts
+
+### Solution: Use Direct Connection in DATABASE_URL
+
+**For Supabase:**
+
+1. **Get your direct connection URL** (not pooler):
+   - Go to Supabase Dashboard → Project Settings → Database
+   - Use the **Connection string** under "Connection pooling" → "Direct connection"
+   - It should use port **5432** (not 6543 for pooler)
+
+2. **Update your `.env` file:**
+   ```env
+   # Use DIRECT connection (required for Prisma migrations)
+   # Port 5432 for direct connection, NOT 6543 for pooler
+   DATABASE_URL=postgresql://postgres:password@db.xxxxx.supabase.co:5432/postgres
+   ```
+
+3. **For other poolers:**
+   - Use the direct database connection URL (bypassing the pooler)
+   - Update `DATABASE_URL` to point directly to your PostgreSQL instance
+
+**Note:** 
+- Use **direct connection** (port 5432) in `DATABASE_URL` for Prisma to work
+- Pooler connections (port 6543) will cause migration failures
+- Direct connection works for both runtime and migrations
 
 ## Usage
 

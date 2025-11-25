@@ -7,7 +7,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // Connection URL is configured in prisma.config.ts
 }
 
 // User Model - Basic structure for relationships

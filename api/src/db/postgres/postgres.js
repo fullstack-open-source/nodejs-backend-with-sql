@@ -1,65 +1,22 @@
-/**
- * PostgreSQL Database Connection
- * Matches FastAPI structure: src/db/postgres/postgres.py
- */
-
 const { Pool } = require('pg');
 const logger = require('../../logger/logger');
 
-/**
- * Build connection string from individual components or use provided URL
- */
+const { buildConnectionString: buildConnectionStringShared } = require('./connection-builder');
+
 function buildConnectionString() {
-  // If DATABASE_URL is provided, use it
-  if (process.env.DATABASE_URL) {
-    return process.env.DATABASE_URL;
-  }
-  
-  // Build from individual components
-  const host = process.env.DATABASE_HOST || 'nodejs-backend-db';
-  const port = process.env.DATABASE_PORT || 5432;
-  const database = process.env.DATABASE_NAME || 'postgres';
-  const user = process.env.DATABASE_USER || 'postgres';
-  const password = process.env.DATABASE_PASSWORD || 'postgres';
-
-  // URL encode password to handle special characters
-  const encodedPassword = encodeURIComponent(password);
-
-  return `postgresql://${user}:${encodedPassword}@${host}:${port}/${database}`;
+  return buildConnectionStringShared();
 }
 
-/**
- * Get SSL configuration
- */
 function getSSLConfig(connectionString = null) {
   const sslEnabled = process.env.DATABASE_SSL === 'true';
-  
-  // For Supabase and other cloud providers, we might need SSL even if not explicitly enabled
-  if (connectionString) {
-    // Check if connection string indicates SSL requirement (Supabase pooler, etc.)
-    if (connectionString.includes('pooler.supabase.com') || 
-        connectionString.includes('supabase.com') ||
-        connectionString.includes('ssl=true') ||
-        connectionString.includes('sslmode=require')) {
-      return {
-        rejectUnauthorized: false // Allow self-signed certificates for cloud providers
-      };
-    }
-  }
-  
   if (sslEnabled) {
     return {
       rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false'
     };
   }
-
   return false;
 }
 
-/**
- * PostgresConnection class
- * Similar to FastAPI's PostgresConnection
- */
 class PostgresConnection {
   constructor(connectionString = null, options = {}) {
     const connString = connectionString || buildConnectionString();
@@ -68,15 +25,14 @@ class PostgresConnection {
     this.pool = new Pool({
       connectionString: connString,
       ssl: options.ssl !== undefined ? options.ssl : sslConfig,
-      max: options.max || parseInt(process.env.DB_POOL_MAX || '50', 10), // Increased from 20 to 50 for better concurrency
-      min: options.min || parseInt(process.env.DB_POOL_MIN || '5', 10), // Increased from 2 to 5 for faster response
+      max: options.max || parseInt(process.env.DB_POOL_MAX || '50', 10), 
+      min: options.min || parseInt(process.env.DB_POOL_MIN || '5', 10), 
       idleTimeoutMillis: options.idleTimeoutMillis || 30000,
       connectionTimeoutMillis: options.connectionTimeoutMillis || 10000,
-      allowExitOnIdle: false, // Keep pool alive
-      maxUses: 7500, // Recycle connections after 7500 uses to prevent memory leaks
+      allowExitOnIdle: false, 
+      maxUses: 7500, 
     });
 
-    // Event handlers
     this.pool.on('connect', () => {
       logger.info('PostgreSQL connection established');
     });
@@ -86,9 +42,6 @@ class PostgresConnection {
     });
   }
 
-  /**
-   * Execute a query
-   */
   async query(text, params) {
     const start = Date.now();
     try {
@@ -109,16 +62,11 @@ class PostgresConnection {
     }
   }
 
-  /**
-   * Get a client from the pool for transactions
-   */
+
   async getClient() {
     return await this.pool.connect();
   }
 
-  /**
-   * Execute a transaction
-   */
   async transaction(callback) {
     const client = await this.getClient();
     try {
@@ -134,9 +82,6 @@ class PostgresConnection {
     }
   }
 
-  /**
-   * Close connection pool
-   */
   async close() {
     if (this.pool) {
       await this.pool.end();
@@ -150,8 +95,6 @@ class PostgresConnection {
    * @returns {Object} Query builder instance
    */
   table(tableName) {
-    // For now, return a simple query builder
-    // Can be extended later to match FastAPI's QueryBuilder
     return {
       select: async (fields = '*') => {
         const query = `SELECT ${fields} FROM ${tableName}`;
@@ -181,7 +124,7 @@ class PostgresConnection {
   }
 }
 
-// Lazy initialization - only create connection when needed
+
 let connection = null;
 
 /**
@@ -189,10 +132,10 @@ let connection = null;
  */
 function getConnection() {
   if (!connection) {
-    // Build connection string from individual components or use provided URL
+    
     const connectionString = buildConnectionString();
 
-    // Validate required environment variables
+    
     if (!connectionString) {
       const errorMsg = 'Missing required database environment variables. Provide either DATABASE_URL or individual DATABASE_HOST, DATABASE_NAME, DATABASE_USER, DATABASE_PASSWORD, DATABASE_PORT';
       logger.error(errorMsg);
@@ -204,13 +147,13 @@ function getConnection() {
       
       connection = new PostgresConnection(connectionString, {
         ssl: sslConfig,
-        max: parseInt(process.env.DB_POOL_MAX || '50', 10), // Increased for high traffic
-        min: parseInt(process.env.DB_POOL_MIN || '5', 10), // Increased for faster response
+        max: parseInt(process.env.DB_POOL_MAX || '50', 10), 
+        min: parseInt(process.env.DB_POOL_MIN || '5', 10), 
         idleTimeoutMillis: parseInt(process.env.DB_POOL_IDLE_TIMEOUT || '30000', 10),
         connectionTimeoutMillis: parseInt(process.env.DB_POOL_CONNECTION_TIMEOUT || '10000', 10),
       });
 
-      // Extract connection info for logging (without password)
+      
       try {
         const urlObj = new URL(connectionString);
         logger.info('PostgreSQL connection pool created', {
@@ -224,7 +167,7 @@ function getConnection() {
         logger.info('PostgreSQL connection pool created', { ssl: !!sslConfig });
       }
 
-      // Test connection asynchronously (don't block module load)
+      
       connection.query('SELECT 1')
         .then(() => {
           logger.info('PostgreSQL connection initialized successfully');
