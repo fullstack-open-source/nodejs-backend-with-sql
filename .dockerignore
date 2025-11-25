@@ -1,0 +1,108 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json.backup
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pm2-*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Testing
+coverage/
+.nyc_output/
+*.test.js
+*.spec.js
+__tests__/
+test/
+
+# Documentation
+*.md
+docs/
+README.md
+QUICKSTART.md
+PROJECT_STRUCTURE.md
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+
+# Build files
+dist/
+build/
+*.map
+
+# Credentials - Allow credentials folder for Google Cloud Storage
+# Note: In production, use environment variables or mounted volumes instead
+# Block JSON files first
+**/*.json
+# Then allow specific exceptions (order matters - negations must come after)
+!package*.json
+!credentials/**/*.json
+!credentials/google-backend-master.json
+# Allow credentials folder
+!credentials/
+**/*.pem
+**/*.key
+**/*.crt
+**/*.plist
+
+# Test files
+test-prisma-connection.js
+**/*.test.js
+**/*.spec.js
+__tests__/
+test/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Cache
+.cache/
+.npm/
+.yarn/
+
+# Misc
+.editorconfig
+.eslintrc*
+.prettierrc*
+

@@ -1,0 +1,187 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  // Connection URL is configured in prisma.config.ts
+}
+
+// User Model - Basic structure for relationships
+model User {
+  user_id    String    @id @default(uuid()) @db.Uuid
+  created_at DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  last_updated DateTime? @default(now()) @updatedAt @map("last_updated") @db.Timestamp(6)
+  
+  // Basic Information
+  first_name         String?  @map("first_name")
+  last_name          String?  @map("last_name")
+  country            String?
+  gender             String?
+  dob                DateTime? @db.Timestamp(6)
+  email              String?  @unique
+  profile_picture_url String? @map("profile_picture_url")
+  phone_number       Json?    @map("phone_number") @db.JsonB
+  
+  // Authentication
+  auth_type              String?  @map("auth_type")
+  password               String
+  is_email_verified      Boolean? @default(false) @map("is_email_verified")
+  is_phone_verified      Boolean? @default(false) @map("is_phone_verified")
+  email_verified_at       DateTime? @map("email_verified_at") @db.Timestamp(6)
+  phone_number_verified_at DateTime? @map("phone_number_verified_at") @db.Timestamp(6)
+  last_sign_in_at        DateTime? @map("last_sign_in_at") @db.Timestamp(6)
+  
+  // User Preferences
+  bio                   String?
+  theme                 String?
+  profile_accessibility String? @map("profile_accessibility")
+  user_type             String? @map("user_type")
+  user_name             String? @unique @map("user_name")
+  language              String?
+  
+  // Status
+  status              String?  @default("INACTIVE")
+  timezone            String?
+  invited_by_user_id  String?  @map("invited_by_user_id") @db.Uuid
+  
+  // Protection and Trash
+  is_protected Boolean? @default(false) @map("is_protected")
+  is_trashed   Boolean? @default(false) @map("is_trashed")
+  
+  // Status Model Fields
+  is_active  Boolean? @default(false) @map("is_active")
+  is_verified Boolean? @default(false) @map("is_verified")
+  
+  // Relationships
+  // User -> UserGroup -> Group -> GroupPermission -> Permission
+  // Permissions are managed through groups only
+  userGroups         UserGroup[] @relation("UserGroups")
+  assignedUserGroups UserGroup[] @relation("AssignedByUser")
+  activityLogs       ActivityLog[]
+  
+  @@map("user")
+  @@index([email])
+  @@index([user_name])
+}
+
+// Permission Model
+model Permission {
+  permission_id String    @id @default(uuid()) @db.Uuid
+  name          String    @unique @db.VarChar(100)
+  codename     String    @unique @db.VarChar(100)
+  description  String?   @db.Text
+  category     String?   @db.VarChar(50)
+  created_at   DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  last_updated DateTime? @default(now()) @updatedAt @map("last_updated") @db.Timestamp(6)
+  
+  // Relationships
+  // Permission -> GroupPermission -> Group (many-to-many)
+  groupPermissions GroupPermission[]
+  
+  @@map("permission")
+  @@index([codename])
+  @@index([category])
+}
+
+// Group Model
+model Group {
+  group_id    String    @id @default(uuid()) @db.Uuid
+  name        String    @unique @db.VarChar(100)
+  codename    String    @unique @db.VarChar(100)
+  description String?   @db.Text
+  is_system   Boolean?  @default(false) @map("is_system")
+  is_active   Boolean?  @default(true) @map("is_active")
+  created_at  DateTime? @default(now()) @map("created_at") @db.Timestamp(6)
+  last_updated DateTime? @default(now()) @updatedAt @map("last_updated") @db.Timestamp(6)
+  
+  // Relationships
+  // Group -> GroupPermission -> Permission (many-to-many)
+  // Group -> UserGroup -> User (many-to-many)
+  groupPermissions GroupPermission[]
+  userGroups       UserGroup[]
+  
+  @@map("group")
+  @@index([codename])
+  @@index([is_active])
+}
+
+// Group-Permission Mapping (Many-to-Many)
+model GroupPermission {
+  id            String     @id @default(uuid()) @db.Uuid
+  group_id      String     @map("group_id") @db.Uuid
+  permission_id String     @map("permission_id") @db.Uuid
+  created_at    DateTime?  @default(now()) @map("created_at") @db.Timestamp(6)
+  
+  // Relationships
+  group      Group      @relation(fields: [group_id], references: [group_id], onDelete: Cascade)
+  permission Permission @relation(fields: [permission_id], references: [permission_id], onDelete: Cascade)
+  
+  @@unique([group_id, permission_id])
+  @@map("group_permission")
+  @@index([group_id])
+  @@index([permission_id])
+}
+
+
+// User Activity Log Model
+model ActivityLog {
+  log_id          String    @id @default(uuid()) @db.Uuid
+  user_id         String?   @map("user_id") @db.Uuid
+  level           String    @default("info") @db.VarChar(20) // info, warn, error, debug, audit
+  message         String    @db.Text
+  action          String?   @db.VarChar(100) // e.g., "login", "logout", "create_user", "update_permission"
+  module          String?   @db.VarChar(50) // e.g., "authentication", "permissions", "dashboard"
+  ip_address      String?   @map("ip_address") @db.VarChar(45) // IPv4 or IPv6
+  user_agent      String?   @map("user_agent") @db.Text
+  device          String?   @db.VarChar(100) // e.g., "Desktop", "Mobile", "Tablet"
+  browser         String?   @db.VarChar(100) // e.g., "Chrome", "Firefox", "Safari"
+  os              String?   @db.VarChar(100) // e.g., "Windows", "Linux", "macOS", "iOS", "Android"
+  platform        String?   @db.VarChar(50) // e.g., "web", "mobile_app", "api"
+  endpoint        String?   @db.VarChar(255) // API endpoint or page URL
+  method          String?   @db.VarChar(10) // HTTP method: GET, POST, PUT, DELETE, etc.
+  status_code     Int?      @map("status_code") // HTTP status code
+  request_id      String?   @map("request_id") @db.VarChar(100) // Unique request identifier
+  session_id      String?   @map("session_id") @db.VarChar(100) // Session identifier
+  metadata        Json?     @db.JsonB // Additional data as JSON
+  error_details   Json?     @map("error_details") @db.JsonB // Error stack trace, details
+  duration_ms     Int?      @map("duration_ms") // Request/action duration in milliseconds
+  created_at      DateTime  @default(now()) @map("created_at") @db.Timestamp(6)
+  
+  // Relationships
+  user            User?     @relation(fields: [user_id], references: [user_id], onDelete: SetNull)
+  
+  @@map("activity_log")
+  @@index([user_id])
+  @@index([level])
+  @@index([action])
+  @@index([module])
+  @@index([created_at])
+  @@index([ip_address])
+  @@index([request_id])
+  @@index([session_id])
+}
+
+// User-Group Mapping (Many-to-Many)
+model UserGroup {
+  id                String    @id @default(uuid()) @db.Uuid
+  user_id           String    @map("user_id") @db.Uuid
+  group_id          String    @map("group_id") @db.Uuid
+  assigned_at       DateTime? @default(now()) @map("assigned_at") @db.Timestamp(6)
+  assigned_by_user_id String? @map("assigned_by_user_id") @db.Uuid
+  
+  // Relationships
+  user            User      @relation("UserGroups", fields: [user_id], references: [user_id], onDelete: Cascade)
+  group           Group     @relation(fields: [group_id], references: [group_id], onDelete: Cascade)
+  assignedByUser  User?     @relation("AssignedByUser", fields: [assigned_by_user_id], references: [user_id], onDelete: SetNull)
+  
+  @@unique([user_id, group_id])
+  @@map("user_group")
+  @@index([user_id])
+  @@index([group_id])
+}
+
+
