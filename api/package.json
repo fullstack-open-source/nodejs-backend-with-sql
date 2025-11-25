@@ -34,8 +34,8 @@
     "backend",
     "nodejs"
   ],
-  "author": "",
-  "license": "ISC",
+  "author": "MR DAS - FULL STACK DEVELOPER",
+  "license": "MIT",
   "dependencies": {
     "@google-cloud/storage": "^7.7.0",
     "@prisma/adapter-pg": "^7.0.0",

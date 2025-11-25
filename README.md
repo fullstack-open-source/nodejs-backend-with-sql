@@ -12,7 +12,7 @@
 
 Node.js Backend is a comprehensive, production-ready RESTful API built with Express.js, featuring JWT authentication, role-based access control, real-time activity logging, advanced security middleware, and comprehensive monitoring capabilities.
 
-**Repository**: [https://github.com/mrdasdeveloper/nodejs-backend](https://github.com/mrdasdeveloper/nodejs-backend)
+**Repository**: [https://github.com/fullstack-open-source/nodejs-backend-with-sql](https://github.com/fullstack-open-source/nodejs-backend-with-sql)
 
 ## 📋 Table of Contents
 
@@ -65,6 +65,86 @@ Node.js Backend is a comprehensive, production-ready RESTful API built with Expr
 - **CORS**: Cross-origin resource sharing with whitelist validation
 - **Swagger**: Interactive API documentation with Swagger UI
 - **Nginx Reverse Proxy**: Production-ready reverse proxy configuration
+
+### 🗄️ Database Support & Flexibility
+
+This project uses **Prisma ORM**, which provides exceptional database flexibility and support for multiple database systems. While the project is configured for **PostgreSQL** by default, Prisma allows you to easily switch between different databases without changing your application code.
+
+#### Currently Configured Database
+
+- **PostgreSQL 16+**: The default database for this project, providing robust relational database features, JSON support, and advanced querying capabilities.
+
+#### Prisma Supported Databases
+
+Prisma ORM supports **10+ database systems**, giving you the flexibility to choose the best database for your needs:
+
+**Self-hosted Databases:**
+- ✅ **PostgreSQL** (9.6 - 17) - Currently configured
+- ✅ **MySQL** (5.6, 5.7, 8.0, 8.4)
+- ✅ **MariaDB** (10.0+)
+- ✅ **SQLite** (All versions)
+- ✅ **Microsoft SQL Server** (2017, 2019, 2022)
+- ✅ **MongoDB** (4.2+)
+- ✅ **CockroachDB** (21.2.4+)
+
+**Managed/Cloud Databases:**
+- ✅ **AWS Aurora** (All versions)
+- ✅ **AWS Aurora Serverless** (All versions)
+- ✅ **Azure SQL** (All versions)
+- ✅ **CockroachDB-as-a-Service** (All versions)
+- ✅ **MongoDB Atlas** (All versions)
+- ✅ **Neon Serverless Postgres** (All versions)
+- ✅ **PlanetScale** (All versions)
+- ✅ **Cloudflare D1** (Preview)
+- ✅ **Aiven** (MySQL & Postgres)
+
+#### Advantages of Using Prisma
+
+1. **Database Agnostic**: Switch between databases by simply changing the `provider` in `schema.prisma`
+2. **Type Safety**: Auto-generated TypeScript types based on your database schema
+3. **Migration Management**: Built-in migration system for schema versioning
+4. **Connection Pooling**: Automatic connection pool management for optimal performance
+5. **Query Optimization**: Intelligent query builder that generates optimized SQL
+6. **Developer Experience**: Intuitive API with excellent IDE autocomplete support
+7. **Multi-Database Support**: Use different databases for different environments (e.g., SQLite for development, PostgreSQL for production)
+
+#### Switching Databases
+
+To switch to a different database, simply update the `datasource` provider in `api/prisma/schema.prisma`:
+
+```prisma
+// For PostgreSQL (current)
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// For MySQL
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// For SQLite
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+// For MongoDB
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+```
+
+Then run:
+```bash
+npm run prisma:generate  # Regenerate Prisma Client
+npm run db:push          # Push schema to new database
+```
+
+**Note**: Some schema features may vary between databases. Refer to [Prisma Database Documentation](https://www.prisma.io/docs/orm/reference/supported-databases) for database-specific considerations.
 
 ## 🏗️ Architecture
 
@@ -436,8 +516,8 @@ NodeJs Backend API
 #### Step 1: Clone Repository
 
 ```bash
-git clone https://github.com/mrdasdeveloper/nodejs-backend.git
-cd nodejs-backend
+git clone https://github.com/fullstack-open-source/nodejs-backend-with-sql.git
+cd nodejs-backend-with-sql
 ```
 
 #### Step 2: Setup Environment
@@ -449,6 +529,38 @@ cp example.env .env
 # Edit .env file with your configuration
 nano .env
 ```
+
+#### Step 2.5: Setup Google Cloud Storage Credentials (Optional)
+
+If you plan to use file upload features, you need to configure Google Cloud Storage credentials:
+
+```bash
+# Navigate to credentials directory
+cd api/credentials
+
+# Copy the template credential file
+cp "google-backend-master copy.json" google-backend-master.json
+
+# Edit the credential file with your Google Cloud Service Account credentials
+nano google-backend-master.json
+```
+
+**How to get Google Cloud Service Account credentials:**
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Select or create a project
+3. Navigate to **IAM & Admin** → **Service Accounts**
+4. Create a new service account or select an existing one
+5. Click on the service account → **Keys** tab
+6. Click **Add Key** → **Create new key** → Choose **JSON** format
+7. Download the JSON file
+8. Copy the contents of the downloaded JSON file into `api/credentials/google-backend-master.json`
+
+**Important Notes:**
+- The template file `google-backend-master copy.json` is provided as a reference
+- Your actual credentials file `google-backend-master.json` is ignored by git (for security)
+- Make sure your service account has the necessary permissions for Google Cloud Storage
+- Update `GOOGLE_STORAGE_BUCKET_NAME` in your `.env` file with your bucket name
 
 #### Step 3: Start Services with Docker Compose
 
@@ -545,8 +657,8 @@ sudo apt install docker-compose-plugin -y
 
 ```bash
 # Clone repository
-git clone https://github.com/mrdasdeveloper/nodejs-backend.git
-cd nodejs-backend/api
+git clone https://github.com/fullstack-open-source/nodejs-backend-with-sql.git
+cd nodejs-backend-with-sql/api
 
 # Install dependencies
 npm install
@@ -561,6 +673,38 @@ cp ../example.env ../.env
 # Edit .env file with your settings
 nano ../.env
 ```
+
+#### Step 3.5: Setup Google Cloud Storage Credentials (Optional)
+
+If you plan to use file upload features, configure Google Cloud Storage credentials:
+
+```bash
+# Navigate to credentials directory
+cd credentials
+
+# Copy the template credential file
+cp "google-backend-master copy.json" google-backend-master.json
+
+# Edit the credential file with your Google Cloud Service Account credentials
+nano google-backend-master.json
+```
+
+**How to get Google Cloud Service Account credentials:**
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Select or create a project
+3. Navigate to **IAM & Admin** → **Service Accounts**
+4. Create a new service account or select an existing one
+5. Click on the service account → **Keys** tab
+6. Click **Add Key** → **Create new key** → Choose **JSON** format
+7. Download the JSON file
+8. Copy the contents of the downloaded JSON file into `api/credentials/google-backend-master.json`
+
+**Important Notes:**
+- The template file `google-backend-master copy.json` is provided as a reference
+- Your actual credentials file `google-backend-master.json` is ignored by git (for security)
+- Make sure your service account has the necessary permissions for Google Cloud Storage
+- Update `GOOGLE_STORAGE_BUCKET_NAME` in your `.env` file with your bucket name
 
 #### Step 4: Database Setup (Local PostgreSQL)
 
@@ -645,8 +789,8 @@ sudo apt install docker-compose-plugin -y
 
 ```bash
 # Clone repository
-git clone https://github.com/mrdasdeveloper/nodejs-backend.git
-cd nodejs-backend
+git clone https://github.com/fullstack-open-source/nodejs-backend-with-sql.git
+cd nodejs-backend-with-sql
 
 # Create production .env file
 cp example.env .env
@@ -662,6 +806,41 @@ nano .env
 - Configure production database credentials
 - Set strong JWT secret (generate with: `openssl rand -base64 32`)
 - Configure production Redis, Sentry, and other services
+- Set `GOOGLE_STORAGE_BUCKET_NAME` with your production bucket name
+
+#### Step 2.5: Setup Google Cloud Storage Credentials (Required for File Upload)
+
+For production file uploads, configure Google Cloud Storage credentials:
+
+```bash
+# Navigate to credentials directory
+cd api/credentials
+
+# Copy the template credential file
+cp "google-backend-master copy.json" google-backend-master.json
+
+# Edit the credential file with your production Google Cloud Service Account credentials
+nano google-backend-master.json
+```
+
+**How to get Google Cloud Service Account credentials:**
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Select or create a project
+3. Navigate to **IAM & Admin** → **Service Accounts**
+4. Create a new service account or select an existing one
+5. Click on the service account → **Keys** tab
+6. Click **Add Key** → **Create new key** → Choose **JSON** format
+7. Download the JSON file
+8. Copy the contents of the downloaded JSON file into `api/credentials/google-backend-master.json`
+
+**Production Security Notes:**
+- The template file `google-backend-master copy.json` is provided as a reference
+- Your actual credentials file `google-backend-master.json` is ignored by git (for security)
+- Use a dedicated service account with minimal required permissions
+- Enable Cloud Storage API in your Google Cloud project
+- Ensure your service account has **Storage Object Admin** or **Storage Admin** role
+- Never commit your actual credentials file to version control
 
 #### Step 3: Deploy with Docker (Recommended)
 
@@ -1056,7 +1235,7 @@ Contributions are welcome! This is an open-source project, and we encourage:
 ### 📞 Support
 
 For issues, questions, or contributions, please visit:
-- **Repository**: [https://github.com/mrdasdeveloper/nodejs-backend](https://github.com/mrdasdeveloper/nodejs-backend)
+- **Repository**: [https://github.com/fullstack-open-source/nodejs-backend-with-sql](https://github.com/fullstack-open-source/nodejs-backend-with-sql)
 - **Issues**: Open an issue on GitHub
 
 ---
