@@ -84,6 +84,7 @@ services:
     #   - ./api:/api
     ports:
       - "${API_DEBUG_PORT:-8900}:3000"
+      - "${PRISMA_STUDIO_PORT:-8901}:51212"
     networks:
       - nodejs_backend_with_postgresql_network
     depends_on:

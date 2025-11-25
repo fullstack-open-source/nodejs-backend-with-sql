@@ -65,6 +65,7 @@ WORKDIR /api
 RUN apk add --no-cache \
     curl \
     dumb-init \
+    xdg-utils \
     && rm -rf /var/cache/apk/*
 
 COPY --from=builder --chown=mrdas:mrdas /api/node_modules ./node_modules
@@ -89,7 +90,7 @@ RUN mkdir -p /api/logs && \
 RUN chmod +x /api/start.sh
 
 USER mrdas
-EXPOSE 3000
+EXPOSE 3000 51212
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
