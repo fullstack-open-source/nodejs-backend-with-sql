@@ -776,14 +776,56 @@ EOF
 #### Step 5: Prisma Setup
 
 ```bash
-# Generate Prisma Client
+# ------------------------------
+# Prisma Client & Schema
+# ------------------------------
+
+# Regenerate Prisma Client after schema changes
 npm run prisma:generate
 
-# Push schema to database
+# Pull the current database schema into Prisma (update schema.prisma)
+npm run prisma:pull
+
+# Push the Prisma schema to the database (without migration)
+npm run prisma:push
+
+# Open Prisma Studio (GUI to view/edit database)
+npm run prisma:studio
+
+# Format Prisma schema file
+npm run prisma:format
+
+# Validate Prisma schema for errors
+npm run prisma:validate
+
+# ------------------------------
+# Database seeding & syncing
+# ------------------------------
+
+# Pull data (custom seed script)
+npm run db:pull
+
+# Push data (custom seed script)
 npm run db:push
 
-# Open Prisma Studio (optional)
-npm run prisma:studio
+# Sync data (custom seed script)
+npm run db:sync
+
+# Seed the database with initial data
+npm run db:seed
+
+# ------------------------------
+# Migrations
+# ------------------------------
+
+# Create and apply migrations (development)
+npm run migrate:dev
+
+# Apply migrations in production
+npm run migrate:deploy
+
+# Drop database and reapply all migrations (destructive)
+npm run migrate:reset
 ```
 
 #### Step 6: Seed Database (Optional)
