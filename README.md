@@ -638,6 +638,12 @@ docker compose exec api npm run db:push
 
 # Seed database (optional)
 docker compose exec api npm run db:seed
+
+# Apply migrations
+docker compose exec api npm run migrate:dev    
+
+# Inspect DB with Prisma Studio
+docker compose exec api npm run prisma:studio    
 ```
 
 #### Step 5: Access Services
