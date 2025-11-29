@@ -1578,7 +1578,7 @@
 								{
 									"key": "file",
 									"type": "file",
-									"src": "/home/mrdas/Downloads/Rameshkumardas.jpg"
+									"src": "/home/mrdas/Downloads/favicon_io/android-chrome-192x192.png"
 								}
 							]
 						},
@@ -1659,7 +1659,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"new_email\": \"mrdasdeveloper@gmail.com\",\n  \"otp\": \"123456\"\n}",
+							"raw": "{\n  \"new_phone\": \"+1234567890\",\n  \"otp\": \"123456\"\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -1667,14 +1667,14 @@
 							}
 						},
 						"url": {
-							"raw": "{{domain.com}}/{{mode}}/settings/change-email",
+							"raw": "{{domain.com}}/{{mode}}/settings/change-phone",
 							"host": [
 								"{{domain.com}}"
 							],
 							"path": [
 								"{{mode}}",
 								"settings",
-								"change-email"
+								"change-phone"
 							]
 						}
 					},
@@ -5003,15 +5003,14 @@
 							}
 						},
 						"url": {
-							"raw": "{{domain.com}}/{{mode}}/auth/dashboard/users-by-auth-type",
+							"raw": "{{domain.com}}/{{mode}}/dashboard/recent-sign-ins",
 							"host": [
 								"{{domain.com}}"
 							],
 							"path": [
 								"{{mode}}",
-								"auth",
 								"dashboard",
-								"users-by-auth-type"
+								"recent-sign-ins"
 							],
 							"query": [
 								{
