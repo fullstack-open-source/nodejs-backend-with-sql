@@ -1911,7 +1911,7 @@
 						"header": [],
 						"body": {
 							"mode": "raw",
-							"raw": "{\n  \"language\": \"en\"\n}",
+							"raw": "{\n  \"confirm\": true\n}",
 							"options": {
 								"raw": {
 									"language": "json"
@@ -1919,14 +1919,14 @@
 							}
 						},
 						"url": {
-							"raw": "{{domain.com}}/{{mode}}/settings/profile-language",
+							"raw": "{{domain.com}}/{{mode}}/settings/delete-account",
 							"host": [
 								"{{domain.com}}"
 							],
 							"path": [
 								"{{mode}}",
 								"settings",
-								"profile-language"
+								"delete-account"
 							]
 						}
 					},
