@@ -5602,15 +5602,14 @@
 							}
 						},
 						"url": {
-							"raw": "{{domain.com}}/{{mode}}/auth/dashboard/overview",
+							"raw": "{{domain.com}}/{{mode}}/health/system",
 							"host": [
 								"{{domain.com}}"
 							],
 							"path": [
 								"{{mode}}",
-								"auth",
-								"dashboard",
-								"overview"
+								"health",
+								"system"
 							],
 							"query": [
 								{
