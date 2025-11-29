@@ -4115,13 +4115,12 @@
 							}
 						},
 						"url": {
-							"raw": "{{domain.com}}/{{mode}}/auth/dashboard/users-by-type",
+							"raw": "{{domain.com}}/{{mode}}/dashboard/users-by-type",
 							"host": [
 								"{{domain.com}}"
 							],
 							"path": [
 								"{{mode}}",
-								"auth",
 								"dashboard",
 								"users-by-type"
 							],
