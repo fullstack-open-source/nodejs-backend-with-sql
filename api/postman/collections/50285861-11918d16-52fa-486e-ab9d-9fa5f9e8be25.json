@@ -4263,13 +4263,12 @@
 							}
 						},
 						"url": {
-							"raw": "{{domain.com}}/{{mode}}/auth/dashboard/users-by-auth-type",
+							"raw": "{{domain.com}}/{{mode}}/dashboard/users-by-auth-type",
 							"host": [
 								"{{domain.com}}"
 							],
 							"path": [
 								"{{mode}}",
-								"auth",
 								"dashboard",
 								"users-by-auth-type"
 							],
@@ -4412,15 +4411,14 @@
 							}
 						},
 						"url": {
-							"raw": "{{domain.com}}/{{mode}}/auth/dashboard/users-by-auth-type",
+							"raw": "{{domain.com}}/{{mode}}/dashboard/users-by-country",
 							"host": [
 								"{{domain.com}}"
 							],
 							"path": [
 								"{{mode}}",
-								"auth",
 								"dashboard",
-								"users-by-auth-type"
+								"users-by-country"
 							],
 							"query": [
 								{
@@ -4561,15 +4559,14 @@
 							}
 						},
 						"url": {
-							"raw": "{{domain.com}}/{{mode}}/auth/dashboard/users-by-auth-type",
+							"raw": "{{domain.com}}/{{mode}}/dashboard/users-by-language",
 							"host": [
 								"{{domain.com}}"
 							],
 							"path": [
 								"{{mode}}",
-								"auth",
 								"dashboard",
-								"users-by-auth-type"
+								"users-by-language"
 							],
 							"query": [
 								{
@@ -4710,15 +4707,14 @@
 							}
 						},
 						"url": {
-							"raw": "{{domain.com}}/{{mode}}/auth/dashboard/users-by-auth-type",
+							"raw": "{{domain.com}}/{{mode}}/dashboard/user-growth",
 							"host": [
 								"{{domain.com}}"
 							],
 							"path": [
 								"{{mode}}",
-								"auth",
 								"dashboard",
-								"users-by-auth-type"
+								"user-growth"
 							],
 							"query": [
 								{
