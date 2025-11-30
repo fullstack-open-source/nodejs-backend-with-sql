@@ -6,14 +6,14 @@ const logger = require('../../src/logger/logger');
 const { prisma } = require('../../src/db/prisma');
 const { validateRequest } = require('../../src/authenticate/authenticate');
 const { checkPermission } = require('../../src/middleware/permissionMiddleware');
-const { authenticateUserWithData, getUserByEmailOrPhone, updateUserPassword, createUserInDb, generateAccessToken, updateLastSignIn } = require('../../src/authenticate/checkpoint');
+const { authenticateUserWithData, getUserByEmailOrPhone, updateUserPassword, createUserInDb, generateAllTokens, getUserById, updateLastSignIn, updateUserVerificationStatus } = require('../../src/authenticate/checkpoint');
 const { setOtp, verifyOtp } = require('../../src/authenticate/otp_cache');
 const { assignGroupsToUser } = require('../../src/permissions/permissions');
 const { sendSMS, sendWhatsApp } = require('../../src/sms/sms');
 const { sendOtpEmail } = require('../../src/email/email');
 const { validateEmail, validatePhone, serializeUserData } = require('./utils');
 const { validate } = require('./models');
-const { otpRequestSchema, otpVerifyRequestSchema, loginWithOtpRequestSchema, setPasswordSchema, passwordChangeSchema, forgetPasswordSchema, checkUserAvailabilityRequestSchema, changeEmailRequestSchema } = require('./models');
+const { otpRequestSchema, otpVerifyRequestSchema, loginWithOtpRequestSchema, setPasswordSchema, passwordChangeSchema, forgetPasswordSchema, checkUserAvailabilityRequestSchema, changeEmailRequestSchema, refreshTokenRequestSchema, tokenInfoRequestSchema } = require('./models');
 const { ProfileAccessibilityEnum, ThemeEnum, UserTypeEnum, LanguageStatusEnum, UserStatusAuthEnum, AuthTypeEnum } = require('../../src/enum/enum');
 
 const validateLoginBody = (req, res, next) => {
@@ -104,19 +104,24 @@ router.post('/token', validateLoginBody, async (req, res, next) => {
     }
     
     const origin = extractOrigin(req);
-    const authResult = await authenticateUserWithData(username, password, origin);
+    const authResult = await authenticateUserWithData(username, password, origin, req);
     
     if (!authResult) {
       const errorResponse = ERROR.fromMap('AUTH_INVALID_CREDENTIALS', { username });
       return res.status(errorResponse.statusCode).json(errorResponse.detail);
     }
     
+    // Serialize user data
+    const userDataSerialized = serializeUserData(authResult.user);
+    
     return res.status(200).json(
       SUCCESS.response('Login successful', {
         access_token: authResult.access_token,
-        token_type: 'bearer'
-      }, {
-        type: 'dict'
+        refresh_token: authResult.refresh_token,
+        session_token: authResult.session_token,
+        session_id: authResult.session_id,
+        token_type: 'bearer',
+        user: userDataSerialized
       })
     );
   } catch (error) {
@@ -179,20 +184,63 @@ router.post('/auth/login-with-password', validateLoginBody, async (req, res, nex
       return res.status(errorResponse.statusCode).json(errorResponse.detail);
     }
     
+    // Authenticate user first (without generating tokens yet) to get user_id
+    const { authenticateUser } = require('../../src/authenticate/checkpoint');
     const origin = extractOrigin(req);
-    const authResult = await authenticateUserWithData(username, password, origin);
+    const user = await authenticateUser(username, password);
     
-    if (!authResult) {
-      const errorResponse = ERROR.fromMap('AUTH_INVALID_CREDENTIALS', { username });
+    if (!user) {
+      const errorResponse = ERROR.fromMap('AUTH_INVALID_CREDENTIALS', { 
+        message: 'Invalid username or password'
+      });
       return res.status(errorResponse.statusCode).json(errorResponse.detail);
     }
     
+    // Check user account status
+    const userId = String(user.user_id);
+    
+    if (!user.is_active) {
+      const errorResponse = ERROR.fromMap('AUTH_INVALID_CREDENTIALS', { 
+        message: 'User account is not active'
+      });
+      return res.status(errorResponse.statusCode).json(errorResponse.detail);
+    }
+    
+    if (!user.is_verified) {
+      const errorResponse = ERROR.fromMap('AUTH_INVALID_CREDENTIALS', { 
+        message: 'User account is not verified'
+      });
+      return res.status(errorResponse.statusCode).json(errorResponse.detail);
+    }
+    
+    // Clear user-level blacklist entries BEFORE generating tokens
+    try {
+      const {
+        clearUserBlacklist,
+        clearUserRefreshTokenBlacklist
+      } = require('../../src/authenticate/session_manager');
+      await clearUserBlacklist(userId);
+      await clearUserRefreshTokenBlacklist(userId);
+    } catch (clearError) {
+      // Log but don't fail login if clearing blacklist fails
+      logger.warn(`Failed to clear user blacklist (non-blocking): ${clearError.message}`, { module: 'Auth', label: 'LOGIN' });
+    }
+    
+    // Now generate tokens (after clearing blacklist)
+    const tokens = generateAllTokens(user, origin, req);
+    
+    // Serialize user data
+    const userDataSerialized = serializeUserData(user);
+    
+    // Return all tokens and user data
     return res.status(200).json(
       SUCCESS.response('Login successful', {
-        access_token: authResult.access_token,
-        token_type: 'bearer'
-      }, {
-        type: 'dict'
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        session_token: tokens.session_token,
+        session_id: tokens.session_id,
+        token_type: 'bearer',
+        user: userDataSerialized
       })
     );
   } catch (error) {
@@ -394,13 +442,40 @@ router.post('/auth/login-with-otp', async (req, res, next) => {
     
     const origin = extractOrigin(req);
     
+    // Update user verification status based on channel
+    // This verifies the account (email or phone) when logging in with OTP
+    if (channel) {
+      await updateUserVerificationStatus(user.user_id, channel);
+    }
+    
+    // Update last sign in
     await updateLastSignIn(user.user_id);
-    const accessToken = await generateAccessToken(user, origin);
+    
+    // Clear user-level blacklist entries to allow new sessions after logout
+    try {
+      const {
+        clearUserBlacklist,
+        clearUserRefreshTokenBlacklist
+      } = require('../../src/authenticate/session_manager');
+      await clearUserBlacklist(String(user.user_id));
+      await clearUserRefreshTokenBlacklist(String(user.user_id));
+    } catch (clearError) {
+      // Log but don't fail login if clearing blacklist fails
+      logger.warn(`Failed to clear user blacklist (non-blocking): ${clearError.message}`, { module: 'Auth', label: 'LOGIN_OTP' });
+    }
+    
+    // Generate tokens directly (don't use authenticate_user_with_data with OTP as password)
+    const tokens = generateAllTokens(user, origin, req);
+    
+    // Serialize user data
     const userDataSerialized = serializeUserData(user);
     
     return res.status(200).json(
       SUCCESS.response('Login successful', {
-        access_token: accessToken,
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token,
+        session_token: tokens.session_token,
+        session_id: tokens.session_id,
         token_type: 'bearer',
         user: userDataSerialized
       })
@@ -451,11 +526,11 @@ router.post('/auth/verify', async (req, res, next) => {
     const { user_id, channel, otp } = value;
     
     // Check if master OTP is used
-    const masterOtp = process.env.MASTER_OTP || process.env.MASTER_ADMIN_OTP;
-    const isMasterOtp = masterOtp && otp === masterOtp;
+    const { isMasterOtp } = require('../../src/authenticate/otp_cache');
+    const isMasterOtpUsed = isMasterOtp(otp);
     
     let isValid = await verifyOtp(user_id, otp, false);
-    if (!isValid && !isMasterOtp) {
+    if (!isValid && !isMasterOtpUsed) {
       const errorResponse = ERROR.fromMap('AUTH_OTP_INVALID', { user_id, channel });
       return res.status(errorResponse.statusCode).json(errorResponse.detail);
     }
@@ -509,14 +584,37 @@ router.post('/auth/verify', async (req, res, next) => {
       return res.status(errorResponse.statusCode).json(errorResponse.detail);
     }
     
-    // If master OTP was used, assign admin group instead of user group
-    if (isMasterOtp) {
-      try {
-        await assignGroupsToUser(createdUserId, ['admin'], null);
-        logger.info(`Master OTP used - assigned admin group to user ${createdUserId}`);
-      } catch (error) {
-        logger.error('Failed to assign admin group for master OTP user', { error: error.message, user_id: createdUserId });
+    // Assign group based on OTP type (master OTP = super_admin, normal OTP = user)
+    // This is CRITICAL - user must have a group to have permissions
+    try {
+      if (isMasterOtpUsed) {
+        // Master OTP used - assign super_admin group
+        await assignGroupsToUser(createdUserId, ['super_admin'], null);
+        logger.info(`Master OTP used - assigned super_admin group to user ${createdUserId}`);
+      } else {
+        // Normal OTP - assign user group (required for basic permissions like edit_profile)
+        await assignGroupsToUser(createdUserId, ['user'], null);
       }
+
+      // Verify group was assigned successfully
+      const { getUserGroups } = require('../../src/permissions/permissions');
+      const userGroups = await getUserGroups(createdUserId);
+      if (!userGroups || userGroups.length === 0) {
+        const errorResponse = ERROR.fromMap('AUTH_SIGNUP_FAILED', {
+          message: 'Failed to assign user group. User created but group assignment failed.',
+          user_id: createdUserId
+        });
+        return res.status(errorResponse.statusCode).json(errorResponse.detail);
+      }
+    } catch (groupError) {
+      // Group assignment is critical - fail signup if it fails
+      logger.error(`CRITICAL: Failed to assign group to user ${createdUserId}: ${groupError.message}`, { module: 'Auth', label: 'SIGNUP' });
+      const errorResponse = ERROR.fromMap('AUTH_SIGNUP_FAILED', {
+        message: `Failed to assign user group: ${groupError.message}`,
+        user_id: createdUserId,
+        error: groupError.message
+      });
+      return res.status(errorResponse.statusCode).json(errorResponse.detail);
     }
     
     const userData = await getUserByEmailOrPhone(user_id);
@@ -526,14 +624,14 @@ router.post('/auth/verify', async (req, res, next) => {
     }
     
     const origin = extractOrigin(req);
-    const authResult = await authenticateUserWithData(user_id, otp, origin);
+    const authResult = await authenticateUserWithData(user_id, otp, origin, req);
     if (!authResult) {
       const errorResponse = ERROR.fromMap('AUTH_SIGNUP_FAILED', { user_id, channel });
       return res.status(errorResponse.statusCode).json(errorResponse.detail);
     }
     
     // Only delete OTP if it was a regular OTP (not master OTP)
-    if (!isMasterOtp) {
+    if (!isMasterOtpUsed) {
       await verifyOtp(user_id, otp, true);
     }
     
@@ -542,6 +640,9 @@ router.post('/auth/verify', async (req, res, next) => {
     return res.status(200).json(
       SUCCESS.response('Signup successful', {
         access_token: authResult.access_token,
+        refresh_token: authResult.refresh_token,
+        session_token: authResult.session_token,
+        session_id: authResult.session_id,
         token_type: 'bearer',
         user: userDataSerialized
       })
@@ -750,16 +851,316 @@ router.post('/auth/forget-password', async (req, res, next) => {
 
 /**
  * @swagger
+ * /api/auth/refresh-token:
+ *   post:
+ *     summary: Refresh all tokens
+ *     description: Refresh all tokens using refresh_token from client. Returns new access_token, refresh_token, session_token, and session_id.
+ *     tags: [Authentication]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - refresh_token
+ *             properties:
+ *               refresh_token:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Tokens refreshed successfully
+ *       401:
+ *         description: Invalid or expired refresh token
+ */
+router.post('/auth/refresh-token', async (req, res, next) => {
+  try {
+    const { error: validationError, value } = validate(req.body, refreshTokenRequestSchema);
+    if (validationError) {
+      const errorResponse = ERROR.fromMap('AUTH_INVALID_PAYLOAD', { error: validationError });
+      return res.status(errorResponse.statusCode).json(errorResponse.detail);
+    }
+
+    const { refresh_token } = value;
+
+    if (!refresh_token || !refresh_token.trim()) {
+      const errorResponse = ERROR.fromMap('AUTH_INVALID_PAYLOAD', { 
+        message: 'refresh_token is required' 
+      });
+      return res.status(errorResponse.statusCode).json(errorResponse.detail);
+    }
+
+    const jwt = require('jsonwebtoken');
+    const SECRET_KEY = process.env.JWT_SECRET_KEY || process.env.JWT_SECRET;
+    const ALGORITHM = 'HS256';
+
+    if (!SECRET_KEY) {
+      const errorResponse = ERROR.fromMap('AUTH_REFRESH_FAILED', { 
+        message: 'JWT configuration error' 
+      });
+      return res.status(errorResponse.statusCode).json(errorResponse.detail);
+    }
+
+    // Decode and validate refresh token
+    let tokenPayload;
+    try {
+      try {
+        tokenPayload = jwt.verify(refresh_token, SECRET_KEY, { 
+          algorithms: [ALGORITHM],
+          audience: 'authenticated'
+        });
+      } catch (audienceError) {
+        // Fallback: try without audience if token wasn't created with audience
+        tokenPayload = jwt.verify(refresh_token, SECRET_KEY, { 
+          algorithms: [ALGORITHM]
+        });
+      }
+    } catch (error) {
+      if (error.name === 'TokenExpiredError') {
+        const errorResponse = ERROR.fromMap('AUTH_INVALID_REFRESH_TOKEN', { 
+          message: 'Refresh token has expired' 
+        });
+        return res.status(errorResponse.statusCode).json(errorResponse.detail);
+      }
+      logger.error('JWT decode error for refresh token', { error: error.message, module: 'Auth', label: 'REFRESH_TOKEN' });
+      const errorResponse = ERROR.fromMap('AUTH_INVALID_REFRESH_TOKEN', { 
+        message: `Invalid refresh token: ${error.message}` 
+      });
+      return res.status(errorResponse.statusCode).json(errorResponse.detail);
+    }
+
+    // Validate token type
+    if (tokenPayload.type !== 'refresh') {
+      const errorResponse = ERROR.fromMap('AUTH_INVALID_TOKEN_TYPE', { 
+        message: 'Token is not a refresh token' 
+      });
+      return res.status(errorResponse.statusCode).json(errorResponse.detail);
+    }
+
+    // Extract user_id and session_id
+    const userId = tokenPayload.sub;
+    const sessionId = tokenPayload.session_id;
+
+    if (!userId) {
+      const errorResponse = ERROR.fromMap('AUTH_USER_NOT_FOUND', { 
+        message: 'User ID not found in token' 
+      });
+      return res.status(errorResponse.statusCode).json(errorResponse.detail);
+    }
+
+    // TODO: Add blacklist checking when session management is implemented
+    // Check if refresh token is blacklisted
+    // Check if session is blacklisted
+    // Check if user refresh tokens are revoked
+
+    // Get user from database
+    const user = await getUserById(userId);
+    if (!user) {
+      const errorResponse = ERROR.fromMap('USER_NOT_FOUND', { user_id: userId });
+      return res.status(errorResponse.statusCode).json(errorResponse.detail);
+    }
+
+    // Get origin for new tokens
+    const origin = extractOrigin(req);
+
+    // Token rotation: Blacklist old tokens and session before generating new ones
+    // This invalidates all old tokens (access, session, refresh) with the old session_id
+    const {
+      blacklistToken,
+      blacklistSession
+    } = require('../../src/authenticate/session_manager');
+    
+    await blacklistToken(refresh_token, 'refresh');
+    if (sessionId) {
+      // Blacklisting session_id invalidates ALL tokens (access, session, refresh) with that session_id
+      await blacklistSession(sessionId);
+    }
+
+    // Generate NEW tokens with NEW session_id (complete token rotation)
+    // This updates ALL tokens: access_token, session_token, and refresh_token
+    const tokens = generateAllTokens(user, origin, req);
+
+    return res.status(200).json(
+      SUCCESS.response('Tokens refreshed successfully', {
+        access_token: tokens.access_token,      // NEW access token
+        refresh_token: tokens.refresh_token,    // NEW refresh token (rotated)
+        session_token: tokens.session_token,    // NEW session token
+        session_id: tokens.session_id,          // NEW session ID
+        token_type: 'bearer'
+      })
+    );
+  } catch (error) {
+    logger.error('Error refreshing token', { error: error.message, stack: error.stack, module: 'Auth', label: 'REFRESH_TOKEN' });
+    const errorResponse = ERROR.fromMap('AUTH_REFRESH_FAILED', {}, error);
+    return res.status(errorResponse.statusCode).json(errorResponse.detail);
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/logout:
+ *   post:
+ *     summary: Logout user
+ *     description: Logout user and revoke all tokens and sessions. Returns user data.
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Successfully logged out
+ */
+router.post('/auth/logout', validateRequest, checkPermission('view_profile'), async (req, res, next) => {
+  try {
+    const userId = String(req.user.uid || req.user.user_id);
+    const { v4: uuidv4 } = require('uuid');
+    const responseId = uuidv4();
+
+    // Initialize revocation statuses
+    let accessTokenRevoked = false;
+    let refreshTokensRevoked = false;
+    let sessionsRevoked = false;
+    let tokensRevoked = false;
+
+    try {
+      // Extract access token from request header
+      const authHeader = req.headers.authorization || '';
+      let token = null;
+      let tokenJti = null;
+
+      if (authHeader.startsWith('Bearer ')) {
+        token = authHeader.replace('Bearer ', '').trim();
+      } else {
+        // Try X-Session-Token header as fallback
+        token = req.headers['x-session-token'] || '';
+      }
+
+      // Decode token to get JTI (for logout, we need to decode even expired tokens)
+      if (token) {
+        try {
+          const jwt = require('jsonwebtoken');
+          const SECRET_KEY = process.env.JWT_SECRET_KEY || process.env.JWT_SECRET;
+          const ALGORITHM = 'HS256';
+
+          if (!SECRET_KEY) {
+            logger.error('JWT_SECRET_KEY not set in environment', { module: 'Auth', label: 'LOGOUT' });
+            throw new Error('JWT configuration error');
+          }
+
+          // Try to decode with audience first, without expiration check (for expired tokens)
+          let payload;
+          try {
+            payload = jwt.decode(token, SECRET_KEY, {
+              algorithms: [ALGORITHM],
+              audience: 'authenticated',
+              complete: false
+            });
+            if (!payload) {
+              // Try without audience
+              payload = jwt.decode(token, SECRET_KEY, {
+                algorithms: [ALGORITHM],
+                complete: false
+              });
+            }
+            tokenJti = payload ? payload.jti : null;
+          } catch (decodeError) {
+            // Last resort: decode without signature verification (for corrupted tokens)
+            try {
+              payload = jwt.decode(token, { complete: false });
+              tokenJti = payload ? payload.jti : null;
+            } catch (error) {
+              tokenJti = null;
+              logger.warn(`Could not decode token for user: ${userId}`, { module: 'Auth', label: 'LOGOUT' });
+            }
+          }
+
+          // Blacklist current access token if JTI is available
+          if (tokenJti) {
+            const {
+              blacklistAccessTokenByJti
+            } = require('../../src/authenticate/session_manager');
+            // Use 45 days expiry (3888000 seconds = 45 days)
+            accessTokenRevoked = await blacklistAccessTokenByJti(
+              tokenJti,
+              userId,
+              3888000 // 45 days
+            );
+            if (!accessTokenRevoked) {
+              logger.warn(`Failed to blacklist access token for user: ${userId}, jti: ${tokenJti}`, { module: 'Auth', label: 'LOGOUT' });
+            }
+          } else {
+            logger.warn(`Token JTI not found in token payload for user: ${userId}`, { module: 'Auth', label: 'LOGOUT' });
+          }
+        } catch (error) {
+          logger.error(`Could not extract or blacklist access token: ${error.message}`, { module: 'Auth', label: 'LOGOUT' });
+          // Continue with logout even if token extraction fails
+        }
+      }
+
+      // Revoke all refresh tokens for this user
+      const {
+        revokeAllUserRefreshTokens,
+        blacklistAllUserSessions
+      } = require('../../src/authenticate/session_manager');
+      
+      refreshTokensRevoked = await revokeAllUserRefreshTokens(userId);
+      if (!refreshTokensRevoked) {
+        logger.warn(`Failed to revoke refresh tokens for user: ${userId}`, { module: 'Auth', label: 'LOGOUT' });
+      }
+
+      // Revoke all sessions for this user (complete logout from all devices)
+      const sessionsRevokedCount = await blacklistAllUserSessions(userId);
+      sessionsRevoked = sessionsRevokedCount > 0;
+      if (!sessionsRevoked) {
+        logger.warn(`Failed to revoke sessions for user: ${userId}`, { module: 'Auth', label: 'LOGOUT' });
+      }
+
+      // Determine overall tokens_revoked status
+      tokensRevoked = accessTokenRevoked && refreshTokensRevoked && sessionsRevoked;
+
+      // Build response message
+      let logoutMessage;
+      if (accessTokenRevoked && refreshTokensRevoked && sessionsRevoked) {
+        logoutMessage = 'Logged out successfully. All tokens and sessions have been revoked.';
+      } else {
+        logoutMessage = 'Logged out successfully. Some tokens may still be active.';
+      }
+
+      // Build response data
+      const responseData = {
+        message: 'Logged out successfully',
+        access_token_revoked: accessTokenRevoked,
+        refresh_tokens_revoked: refreshTokensRevoked,
+        sessions_revoked: sessionsRevoked,
+        tokens_revoked: tokensRevoked
+      };
+
+      return res.status(200).json(
+        SUCCESS.response(logoutMessage, responseData, { type: 'dict' })
+      );
+    } catch (error) {
+      logger.error('Error in logout', { error: error.message, stack: error.stack, module: 'Auth', label: 'LOGOUT' });
+      const errorResponse = ERROR.fromMap('AUTH_LOGOUT_FAILED', { user_id: userId }, error);
+      return res.status(errorResponse.statusCode).json(errorResponse.detail);
+    }
+  } catch (error) {
+    logger.error('Error in logout', { error: error.message, module: 'Auth', label: 'LOGOUT' });
+    next(error);
+  }
+});
+
+/**
+ * @swagger
  * /api/logout:
  *   post:
- *     summary: Logout
- *     description: Logout user (returns user data)
+ *     summary: Logout (deprecated - use /auth/logout)
+ *     description: Logout user (returns user data). This endpoint is deprecated, use /auth/logout instead.
  *     tags: [Authentication]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Successfully fetched user data
+ * @deprecated Use /auth/logout instead
  */
 router.post('/logout', validateRequest, checkPermission('view_profile'), async (req, res, next) => {
   try {
@@ -947,6 +1348,381 @@ router.post('/auth/verify-email-and-phone', async (req, res, next) => {
   } catch (error) {
     logger.error('Error in verify_email_and_phone', { error: error.message, module: 'Auth', label: 'VERIFY_EMAIL_PHONE' });
     next(error);
+  }
+});
+
+/**
+ * Internal implementation for token-info endpoint
+ * @param {object} req - Express request object
+ * @param {object} currentUser - Current authenticated user
+ * @param {object} tokenData - Optional token data from request body
+ * @returns {Promise<object>} Token information response
+ */
+async function getTokenInfoImpl(req, currentUser, tokenData) {
+  const jwt = require('jsonwebtoken');
+  const SECRET_KEY = process.env.JWT_SECRET_KEY || process.env.JWT_SECRET;
+  const ALGORITHM = 'HS256';
+  
+  // Token expiry configuration (in minutes)
+  const ACCESS_TOKEN_EXPIRY = parseInt(process.env.ACCESS_TOKEN_EXPIRY || '60', 10);
+  const SESSION_TOKEN_EXPIRY = parseInt(process.env.SESSION_TOKEN_EXPIRY || '10080', 10); // 7 days
+  const REFRESH_TOKEN_EXPIRY = parseInt(process.env.REFRESH_TOKEN_EXPIRY || '43200', 10); // 30 days
+
+  // Helper function to convert minutes to human-readable format
+  function formatDuration(minutes) {
+    if (minutes < 60) {
+      return `${minutes} minute${minutes !== 1 ? 's' : ''}`;
+    } else if (minutes < 1440) { // Less than 24 hours
+      const hours = Math.floor(minutes / 60);
+      const remainingMinutes = minutes % 60;
+      if (remainingMinutes === 0) {
+        return `${hours} hour${hours !== 1 ? 's' : ''}`;
+      } else {
+        return `${hours} hour${hours !== 1 ? 's' : ''} and ${remainingMinutes} minute${remainingMinutes !== 1 ? 's' : ''}`;
+      }
+    } else if (minutes < 10080) { // Less than 7 days
+      const days = Math.floor(minutes / 1440);
+      const remainingHours = Math.floor((minutes % 1440) / 60);
+      if (remainingHours === 0) {
+        return `${days} day${days !== 1 ? 's' : ''}`;
+      } else {
+        return `${days} day${days !== 1 ? 's' : ''} and ${remainingHours} hour${remainingHours !== 1 ? 's' : ''}`;
+      }
+    } else { // 7 days or more
+      const days = Math.floor(minutes / 1440);
+      const weeks = Math.floor(days / 7);
+      const remainingDays = days % 7;
+      if (remainingDays === 0) {
+        return `${weeks} week${weeks !== 1 ? 's' : ''}`;
+      } else {
+        return `${weeks} week${weeks !== 1 ? 's' : ''} and ${remainingDays} day${remainingDays !== 1 ? 's' : ''}`;
+      }
+    }
+  }
+
+  // Get token configuration from environment
+  const tokenConfig = {
+    access_token: {
+      expiry_minutes: ACCESS_TOKEN_EXPIRY,
+      expires_in: formatDuration(ACCESS_TOKEN_EXPIRY)
+    },
+    session_token: {
+      expiry_minutes: SESSION_TOKEN_EXPIRY,
+      expires_in: formatDuration(SESSION_TOKEN_EXPIRY)
+    },
+    refresh_token: {
+      expiry_minutes: REFRESH_TOKEN_EXPIRY,
+      expires_in: formatDuration(REFRESH_TOKEN_EXPIRY)
+    }
+  };
+
+  // Helper function to decode and analyze a token
+  function decodeTokenInfo(tokenStr, tokenName = 'token') {
+    try {
+      let payload;
+      try {
+        payload = jwt.decode(tokenStr, { complete: false });
+      } catch (error) {
+        logger.warn(`Could not decode token: ${error.message}`, { module: 'Auth', label: 'TOKEN_INFO' });
+        return {
+          error: 'Could not decode token',
+          message: error.message
+        };
+      }
+
+      if (!payload) {
+        return {
+          error: 'No token payload found'
+        };
+      }
+
+      const tokenType = payload.type || 'access';
+      const expTimestamp = payload.exp;
+      const iatTimestamp = payload.iat;
+      const sessionId = payload.session_id;
+
+      if (expTimestamp) {
+        // Convert timestamp to datetime
+        const expDatetime = new Date(expTimestamp * 1000);
+        const now = new Date();
+        const iatDatetime = iatTimestamp ? new Date(iatTimestamp * 1000) : now;
+
+        const timeUntilExpiry = expDatetime - now;
+        const minutesUntilExpiry = Math.floor(timeUntilExpiry / 60000);
+        const isExpired = minutesUntilExpiry <= 0;
+
+        // Calculate age of token
+        const tokenAge = now - iatDatetime;
+        const minutesOld = Math.floor(tokenAge / 60000);
+        const hoursOld = Math.floor(minutesOld / 60);
+        const daysOld = Math.floor(minutesOld / 1440);
+
+        // Calculate token lifetime
+        const tokenLifetime = expDatetime - iatDatetime;
+        const totalLifetimeMinutes = Math.floor(tokenLifetime / 60000);
+
+        // Calculate percentage of lifetime used
+        const lifetimePercentage = totalLifetimeMinutes > 0 
+          ? Math.round((minutesOld / totalLifetimeMinutes * 100) * 10) / 10 
+          : 0;
+
+        return {
+          token_type: tokenType,
+          token_age: formatDuration(Math.abs(minutesOld)),
+          token_age_minutes: minutesOld,
+          token_age_hours: hoursOld > 0 ? hoursOld : null,
+          token_age_days: daysOld > 0 ? daysOld : null,
+          expires_in: isExpired ? 'EXPIRED' : formatDuration(Math.abs(minutesUntilExpiry)),
+          expires_in_minutes: minutesUntilExpiry,
+          lifetime_percentage_used: lifetimePercentage,
+          is_expired: isExpired,
+          status: isExpired ? 'EXPIRED' : 'ACTIVE',
+          session_id: sessionId || null
+        };
+      } else {
+        return {
+          error: 'No expiration time in token',
+          token_type: tokenType
+        };
+      }
+    } catch (error) {
+      logger.warn(`Could not decode token: ${error.message}`, { module: 'Auth', label: 'TOKEN_INFO' });
+      return {
+        error: 'Could not decode token',
+        message: error.message
+      };
+    }
+  }
+
+  // Extract current token from headers
+  const authHeader = req.headers.authorization || '';
+  let token = null;
+  if (authHeader.startsWith('Bearer ')) {
+    token = authHeader.replace('Bearer ', '').trim();
+  } else {
+    token = req.headers['x-session-token'] || '';
+  }
+
+  // Decode all available tokens
+  let currentTokenInfo = null;
+  let accessTokenInfo = null;
+  let sessionTokenInfo = null;
+  let refreshTokenInfo = null;
+
+  if (token) {
+    currentTokenInfo = decodeTokenInfo(token, 'current_token');
+  }
+
+  // Extract and decode all tokens from headers
+  if (authHeader.startsWith('Bearer ')) {
+    const accessToken = authHeader.replace('Bearer ', '').trim();
+    if (accessToken && accessToken !== token) {
+      accessTokenInfo = decodeTokenInfo(accessToken, 'access_token');
+    }
+  }
+
+  const sessionTokenHeader = req.headers['x-session-token'] || '';
+  if (sessionTokenHeader && sessionTokenHeader !== token) {
+    sessionTokenInfo = decodeTokenInfo(sessionTokenHeader, 'session_token');
+  }
+
+  // If tokens provided in request body, decode them for comparison
+  let beforeTokenInfo = null;
+  if (tokenData) {
+    if (tokenData.access_token) {
+      if (!accessTokenInfo) {
+        accessTokenInfo = decodeTokenInfo(tokenData.access_token, 'access_token');
+      } else {
+        beforeTokenInfo = decodeTokenInfo(tokenData.access_token, 'before');
+      }
+    }
+    if (tokenData.session_token) {
+      if (!sessionTokenInfo) {
+        sessionTokenInfo = decodeTokenInfo(tokenData.session_token, 'session_token');
+      } else {
+        beforeTokenInfo = decodeTokenInfo(tokenData.session_token, 'before');
+      }
+    }
+    if (tokenData.refresh_token) {
+      refreshTokenInfo = decodeTokenInfo(tokenData.refresh_token, 'refresh_token');
+      if (!beforeTokenInfo) {
+        beforeTokenInfo = refreshTokenInfo;
+      }
+    }
+  }
+
+  // Calculate extension info
+  let extensionInfo = {};
+  if (currentTokenInfo && !currentTokenInfo.error) {
+    const tokenType = currentTokenInfo.token_type;
+    if (tokenType === 'access') {
+      extensionInfo = {
+        current_expires_in: currentTokenInfo.expires_in,
+        after_refresh_expires_in: formatDuration(ACCESS_TOKEN_EXPIRY),
+        extension_minutes: ACCESS_TOKEN_EXPIRY
+      };
+    } else if (tokenType === 'session') {
+      extensionInfo = {
+        current_expires_in: currentTokenInfo.expires_in,
+        after_refresh_expires_in: formatDuration(SESSION_TOKEN_EXPIRY),
+        extension_minutes: SESSION_TOKEN_EXPIRY
+      };
+    } else if (tokenType === 'refresh') {
+      extensionInfo = {
+        current_expires_in: currentTokenInfo.expires_in,
+        after_refresh_expires_in: formatDuration(REFRESH_TOKEN_EXPIRY),
+        extension_minutes: REFRESH_TOKEN_EXPIRY
+      };
+    }
+  }
+
+  // Build all tokens info with ages
+  const allTokensAges = {};
+
+  if (currentTokenInfo && !currentTokenInfo.error) {
+    allTokensAges.current = {
+      token_type: currentTokenInfo.token_type,
+      token_age: currentTokenInfo.token_age,
+      token_age_minutes: currentTokenInfo.token_age_minutes,
+      expires_in: currentTokenInfo.expires_in,
+      expires_in_minutes: currentTokenInfo.expires_in_minutes,
+      lifetime_percentage_used: currentTokenInfo.lifetime_percentage_used,
+      status: currentTokenInfo.status
+    };
+  }
+
+  if (accessTokenInfo && !accessTokenInfo.error) {
+    allTokensAges.access_token = {
+      token_age: accessTokenInfo.token_age,
+      token_age_minutes: accessTokenInfo.token_age_minutes,
+      expires_in: accessTokenInfo.expires_in,
+      expires_in_minutes: accessTokenInfo.expires_in_minutes,
+      lifetime_percentage_used: accessTokenInfo.lifetime_percentage_used,
+      status: accessTokenInfo.status
+    };
+  }
+
+  if (sessionTokenInfo && !sessionTokenInfo.error) {
+    allTokensAges.session_token = {
+      token_age: sessionTokenInfo.token_age,
+      token_age_minutes: sessionTokenInfo.token_age_minutes,
+      expires_in: sessionTokenInfo.expires_in,
+      expires_in_minutes: sessionTokenInfo.expires_in_minutes,
+      lifetime_percentage_used: sessionTokenInfo.lifetime_percentage_used,
+      status: sessionTokenInfo.status
+    };
+  }
+
+  if (refreshTokenInfo && !refreshTokenInfo.error) {
+    allTokensAges.refresh_token = {
+      token_age: refreshTokenInfo.token_age,
+      token_age_minutes: refreshTokenInfo.token_age_minutes,
+      expires_in: refreshTokenInfo.expires_in,
+      expires_in_minutes: refreshTokenInfo.expires_in_minutes,
+      lifetime_percentage_used: refreshTokenInfo.lifetime_percentage_used,
+      status: refreshTokenInfo.status
+    };
+  }
+
+  // Build simplified response
+  const responseData = {
+    token_ages: Object.keys(allTokensAges).length > 0 
+      ? allTokensAges 
+      : { current: currentTokenInfo || { error: 'No token found' } },
+    token_configuration: tokenConfig,
+    extension_info: extensionInfo
+  };
+
+  // Add before/after comparison if available
+  if (beforeTokenInfo && !beforeTokenInfo.error) {
+    responseData.before_token = {
+      token_age: beforeTokenInfo.token_age,
+      token_age_minutes: beforeTokenInfo.token_age_minutes,
+      expires_in: beforeTokenInfo.expires_in,
+      expires_in_minutes: beforeTokenInfo.expires_in_minutes,
+      status: beforeTokenInfo.status
+    };
+    // Calculate how much time was extended
+    if (currentTokenInfo && !currentTokenInfo.error) {
+      const beforeExpires = beforeTokenInfo.expires_in_minutes || 0;
+      const currentExpires = currentTokenInfo.expires_in_minutes || 0;
+      if (beforeExpires > 0 && currentExpires > 0) {
+        const extendedMinutes = currentExpires - beforeExpires;
+        if (extendedMinutes > 0) {
+          extensionInfo.extended_by = formatDuration(extendedMinutes);
+          extensionInfo.extended_by_minutes = extendedMinutes;
+        }
+      }
+    }
+  }
+
+  return SUCCESS.response('Token information retrieved successfully', responseData, { type: 'dict' });
+}
+
+/**
+ * @swagger
+ * /api/auth/token-info:
+ *   get:
+ *     summary: Get token information
+ *     description: Get information about the current authentication token. Useful for debugging and understanding token configuration.
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Token information retrieved successfully
+ */
+router.get('/auth/token-info', validateRequest, async (req, res, next) => {
+  try {
+    const response = await getTokenInfoImpl(req, req.user, null);
+    return res.status(200).json(response);
+  } catch (error) {
+    logger.error('Error getting token info', { error: error.message, module: 'Auth', label: 'TOKEN_INFO' });
+    const errorResponse = ERROR.fromMap('AUTH_PROCESSING_ERROR', {}, error);
+    return res.status(errorResponse.statusCode).json(errorResponse.detail);
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/token-info:
+ *   post:
+ *     summary: Get token information (with token comparison)
+ *     description: Get information about the current authentication token. Can accept tokens in request body for comparison.
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               access_token:
+ *                 type: string
+ *               session_token:
+ *                 type: string
+ *               refresh_token:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Token information retrieved successfully
+ */
+router.post('/auth/token-info', validateRequest, async (req, res, next) => {
+  try {
+    const { error: validationError, value } = validate(req.body, tokenInfoRequestSchema);
+    if (validationError) {
+      const errorResponse = ERROR.fromMap('AUTH_INVALID_PAYLOAD', { error: validationError });
+      return res.status(errorResponse.statusCode).json(errorResponse.detail);
+    }
+
+    const response = await getTokenInfoImpl(req, req.user, value);
+    return res.status(200).json(response);
+  } catch (error) {
+    logger.error('Error getting token info', { error: error.message, module: 'Auth', label: 'TOKEN_INFO' });
+    const errorResponse = ERROR.fromMap('AUTH_PROCESSING_ERROR', {}, error);
+    return res.status(errorResponse.statusCode).json(errorResponse.detail);
   }
 });
 

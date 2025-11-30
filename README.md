@@ -10,7 +10,7 @@
 
 > **Enterprise-Grade Node.js Backend API with Advanced Features**
 
-Node.js Backend is a comprehensive, production-ready RESTful API built with Express.js, featuring JWT authentication, role-based access control, real-time activity logging, advanced security middleware, and comprehensive monitoring capabilities.
+Node.js Backend is a comprehensive, production-ready RESTful API built with Express.js, featuring JWT authentication with Instagram-style multi-token pattern, role-based access control, real-time activity logging, advanced security middleware, and comprehensive monitoring capabilities.
 
 **Repository**: [https://github.com/fullstack-open-source/nodejs-backend-with-sql](https://github.com/fullstack-open-source/nodejs-backend-with-sql)
 
@@ -19,10 +19,12 @@ Node.js Backend is a comprehensive, production-ready RESTful API built with Expr
 - [🚀 Features](#-features)
 - [🏗️ Architecture](#️-architecture)
   - [System Architecture](#system-architecture)
+  - [Authentication Architecture](#authentication-architecture)
   - [Request Flow](#request-flow)
   - [Middleware Stack](#middleware-stack)
   - [Database Architecture](#database-architecture)
   - [Module Structure](#module-structure)
+- [📚 API Documentation](#-api-documentation)
 - [📦 Installation & Setup](#-installation--setup)
   - [Prerequisites](#prerequisites)
   - [Quick Start](#quick-start)
@@ -39,14 +41,15 @@ Node.js Backend is a comprehensive, production-ready RESTful API built with Expr
 ### 🎯 Core Capabilities
 
 - **RESTful API**: Comprehensive REST API with Express.js framework
-- **JWT Authentication**: Secure token-based authentication system
+- **JWT Authentication**: Instagram-style multi-token authentication system (Access, Session, Refresh tokens)
 - **Role-Based Access Control**: Flexible permission system with groups and permissions
 - **Activity Logging**: Comprehensive audit trail with detailed metadata
 - **File Upload**: Google Cloud Storage integration for media files
-- **Email & SMS**: Twilio and Nodemailer integration for notifications
+- **Email & SMS**: Twilio and Nodemailer integration for notifications and OTP
 - **Error Tracking**: Sentry integration for production monitoring and error tracking
 - **API Documentation**: Auto-generated Swagger/OpenAPI documentation
-- **Request Queue**: Rate limiting and request queuing for traffic management
+- **Multilingual Support**: Multi-language API responses with automatic translation
+- **Rate Limiting**: Request throttling and rate limiting for traffic management
 - **Worker Pool**: CPU-intensive task processing with worker threads
 - **Docker Ready**: Production-ready containerization with multi-stage builds
 - **PM2 Support**: Process management with cluster mode for high availability
@@ -65,6 +68,17 @@ Node.js Backend is a comprehensive, production-ready RESTful API built with Expr
 - **CORS**: Cross-origin resource sharing with whitelist validation
 - **Swagger**: Interactive API documentation with Swagger UI
 - **Nginx Reverse Proxy**: Production-ready reverse proxy configuration
+- **Multilingual**: Multi-language support for API responses (English, Arabic, and more)
+
+### 🔐 Authentication Features
+
+- **Multi-Token System**: Access token (1 hour), Session token (7 days), Refresh token (30 days)
+- **Token Blacklisting**: Redis-based token invalidation for secure logout
+- **OTP Verification**: Email, SMS, and WhatsApp OTP support
+- **Password Management**: Set, change, and reset password functionality
+- **Email/Phone Verification**: Two-step verification for contact changes
+- **Session Management**: Stateless session management with unique session IDs
+- **Token Rotation**: Automatic token rotation on refresh for enhanced security
 
 ### 🗄️ Database Support & Flexibility
 
@@ -257,8 +271,8 @@ The system follows a layered architecture with clear separation of concerns:
 │   (Prisma ORM)           │   │   (Sessions, Cache)      │
 │   - User Data            │   │   - Session Storage      │
 │   - Permissions          │   │   - OTP Cache            │
-│   - Activity Logs        │   │   - Rate Limiting        │
-│   - Groups               │   │   - Temporary Data       │
+│   - Activity Logs        │   │   - Token Blacklist      │
+│   - Groups               │   │   - Rate Limiting        │
 └──────────────────────────┘   └──────────────────────────┘
                 │
                 ▼
@@ -270,6 +284,19 @@ The system follows a layered architecture with clear separation of concerns:
 │   - Static Assets        │
 └──────────────────────────┘
 ```
+
+### Authentication Architecture
+
+The authentication system implements a **stateless, multi-token architecture** similar to Instagram:
+
+**Key Features:**
+- **Multi-Token System**: Access token (1 hour), Session token (7 days), Refresh token (30 days)
+- **Token Blacklisting**: Redis-based cache for token invalidation
+- **Session Management**: Unique session_id links all tokens together
+- **Token Rotation**: Refresh tokens rotate on each refresh for security
+- **Origin Validation**: Domain-specific token validation
+
+**Complete Documentation**: See [Authentication Router](./api/router/authenticate/authenticate.md)
 
 ### Request Flow
 
@@ -508,6 +535,9 @@ NodeJs Backend API
 │   │   │   ├── debug.js                 # Debug utilities
 │   │   │   └── workerUtils.js           # Worker pool utilities
 │   │   │
+│   │   ├── 🌐 multilingual/              # Multilingual support
+│   │   │   └── multilingual.js          # Language utilities
+│   │   │
 │   │   └── 👷 workers/                   # Worker threads
 │   │       ├── workerPool.js            # Worker pool manager
 │   │       └── cpuTaskWorker.js         # CPU task worker
@@ -540,6 +570,125 @@ NodeJs Backend API
 ├── 📄 reload.sh                          # Deployment script
 └── 📄 README.md                          # This file
 ```
+
+## 📚 API Documentation
+
+### Authentication & User Management
+
+**Complete Documentation**: [Authentication Router](./api/router/authenticate/authenticate.md)
+
+**Endpoints:**
+- `POST /{MODE}/auth/login-with-password` - Login with email/phone and password
+- `POST /{MODE}/auth/login-with-otp` - Login with OTP
+- `POST /{MODE}/auth/send-one-time-password` - Send OTP via email/SMS/WhatsApp
+- `POST /{MODE}/auth/verify-one-time-password` - Verify OTP
+- `POST /{MODE}/auth/verify` - Signup/Register with OTP
+- `POST /{MODE}/auth/set-password` - Set password for authenticated user
+- `POST /{MODE}/auth/change-password` - Change user password
+- `POST /{MODE}/auth/forget-password` - Reset password with OTP
+- `POST /{MODE}/auth/refresh-token` - Refresh access tokens
+- `POST /{MODE}/auth/logout` - Logout and revoke tokens
+- `POST /{MODE}/auth/token-info` - Get token information
+- `POST /{MODE}/auth/check-user-availability` - Check email/phone availability
+- `POST /{MODE}/auth/verify-email-and-phone` - Verify email/phone with OTP
+
+**Profile Management**: [Profile Router](./api/router/authenticate/profile.md)
+
+**Endpoints:**
+- `GET /{MODE}/settings/profile` - Get user profile
+- `GET /{MODE}/settings/profile/{user_id}` - Get profile by ID
+- `POST /{MODE}/settings/profile-picture` - Update profile picture
+- `PUT /{MODE}/settings/profile` - Update user profile
+- `POST /{MODE}/settings/change-email` - Change email with OTP verification
+- `POST /{MODE}/settings/change-phone` - Change phone with OTP verification
+- `POST /{MODE}/settings/profile-accessibility` - Update profile accessibility
+- `POST /{MODE}/settings/profile-language` - Update profile language
+- `POST /{MODE}/settings/update-theme` - Update theme preference
+- `POST /{MODE}/settings/update-timezone` - Update timezone
+- `GET /{MODE}/settings` - Get user settings
+- `POST /{MODE}/settings/deactivate-account` - Deactivate account
+- `POST /{MODE}/settings/delete-account` - Delete account
+
+### Permissions & Groups
+
+**Complete Documentation**: [Permissions Router](./api/router/permissions/permissions.md)
+
+**Endpoints:**
+- `GET /{MODE}/permissions` - Get all permissions
+- `GET /{MODE}/permissions/{permission_id}` - Get permission by ID
+- `POST /{MODE}/permissions` - Create new permission
+- `PUT /{MODE}/permissions/{permission_id}` - Update permission
+- `DELETE /{MODE}/permissions/{permission_id}` - Delete permission
+- `GET /{MODE}/groups` - Get all groups
+- `GET /{MODE}/groups/{group_id}` - Get group by ID
+- `POST /{MODE}/groups` - Create new group
+- `PUT /{MODE}/groups/{group_id}` - Update group
+- `DELETE /{MODE}/groups/{group_id}` - Delete group
+- `POST /{MODE}/groups/{group_id}/permissions` - Assign permissions to group
+- `GET /{MODE}/users/{user_id}/groups` - Get user groups
+- `GET /{MODE}/users/{user_id}/permissions` - Get user permissions
+- `POST /{MODE}/users/{user_id}/groups` - Assign groups to user
+- `GET /{MODE}/users/me/groups` - Get current user groups
+- `GET /{MODE}/users/me/permissions` - Get current user permissions
+
+### Dashboard & Analytics
+
+**Complete Documentation**: [Dashboard Router](./api/router/dashboard/dashboard.md)
+
+**Endpoints:**
+- `GET /{MODE}/dashboard/overview` - Get dashboard overview statistics
+- `GET /{MODE}/dashboard/users-by-status` - Get users grouped by status
+- `GET /{MODE}/dashboard/users-by-type` - Get users grouped by type
+- `GET /{MODE}/dashboard/users-by-auth-type` - Get users grouped by auth type
+- `GET /{MODE}/dashboard/users-by-country` - Get users grouped by country
+- `GET /{MODE}/dashboard/users-by-language` - Get users grouped by language
+- `GET /{MODE}/dashboard/user-growth` - Get user growth statistics
+- `GET /{MODE}/dashboard/role-statistics` - Get role/group statistics
+- `GET /{MODE}/dashboard/recent-sign-ins` - Get recent sign-in activity
+- `GET /{MODE}/dashboard/all-statistics` - Get all statistics
+
+### File Upload
+
+**Complete Documentation**: [Upload Router](./api/router/upload/upload.md)
+
+**Endpoints:**
+- `POST /{MODE}/upload/media` - Upload media file (direct upload or URL)
+- `DELETE /{MODE}/upload/media/{file_id}` - Delete uploaded media
+
+**Features:**
+- Direct file upload with multipart/form-data
+- URL-based upload (downloads and stores file from URL)
+- Google Cloud Storage integration
+- Automatic file validation and processing
+- Support for images, videos, and documents
+
+### Activity Logging
+
+**Complete Documentation**: [Activity Router](./api/router/activity/activity.md)
+
+**Endpoints:**
+- `GET /{MODE}/activity` - Get activity logs with filtering
+- `GET /{MODE}/activity/{log_id}` - Get specific activity log
+- `POST /{MODE}/activity` - Create activity log entry
+
+**Features:**
+- Comprehensive audit trail
+- User action tracking
+- Request/response logging
+- Error logging with details
+- Metadata storage (JSONB)
+
+### Health Monitoring
+
+**Complete Documentation**: [Health Router](./api/router/health/health.md)
+
+**Endpoints:**
+- `GET /health` - Basic health check (no prefix)
+- `GET /{MODE}/health` - Detailed health check
+- `GET /{MODE}/health/system` - System health with metrics
+- `GET /{MODE}/health/database` - Database connection health
+- `GET /{MODE}/health/storage` - Storage (GCS) health check
+- `GET /{MODE}/health/test-sentry` - Test Sentry integration
 
 ## 📦 Installation & Setup
 
@@ -1191,6 +1340,7 @@ docker network inspect nodejs_backend_with_postgresql_network
 │  │  │  Cache Storage                                   │  │     │
 │  │  │  - OTP cache                                     │  │     │
 │  │  │  - Session storage                               │  │     │
+│  │  │  - Token blacklist                               │  │     │
 │  │  │  - Rate limiting data                            │  │     │
 │  │  └──────────────────────────────────────────────────┘  │     │
 │  └────────────────────────────────────────────────────────┘     │
@@ -1247,6 +1397,49 @@ Port 9080 (Host) ──► Nginx ──► Port 3000 ──► API Service
                                          │
                                          ├─► PostgreSQL (Port 5432)
                                          └─► Redis (Port 6379)
+```
+
+## 🔐 Authentication System
+
+### Multi-Token Architecture
+
+The authentication system uses a **three-token approach** similar to Instagram:
+
+1. **Access Token** (1 hour)
+   - Lightweight token for API authentication
+   - Minimal payload for fast validation
+   - Includes JTI (JWT ID) for efficient blacklisting
+
+2. **Session Token** (7 days) - **Recommended**
+   - Contains full user profile and permissions
+   - Fastest validation (no database lookup needed)
+   - Preferred for frontend API calls
+
+3. **Refresh Token** (30 days)
+   - Used to obtain new tokens when they expire
+   - Cannot be used for API authentication
+   - Rotates on each refresh for security
+
+**Complete Documentation**: [Authentication Router](./api/router/authenticate/authenticate.md)
+
+### Token Usage
+
+**Recommended Approach (Session Token):**
+```javascript
+// Store tokens after login
+{
+    "access_token": "...",
+    "session_token": "...",  // RECOMMENDED for API calls
+    "refresh_token": "...",
+    "session_id": "..."
+}
+
+// Use session_token for API calls (fastest validation)
+headers = {
+    "X-Session-Token": session_token  // Preferred
+    // OR
+    "Authorization": `Bearer ${session_token}`  // Also works
+}
 ```
 
 ---

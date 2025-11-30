@@ -1,6 +1,6 @@
 /**
  * Authentication Checkpoint Functions
- * Core authentication functions matching FastAPI checkpoint.py
+ * Core authentication functions for user management and token generation
  */
 
 const { v4: uuidv4 } = require('uuid');
@@ -9,6 +9,11 @@ const bcrypt = require('bcryptjs');
 const { prisma } = require('../db/prisma');
 const logger = require('../logger/logger');
 const { generateToken } = require('./authenticate');
+const {
+  ACCESS_TOKEN_EXPIRY,
+  SESSION_TOKEN_EXPIRY,
+  REFRESH_TOKEN_EXPIRY
+} = require('./session_manager');
 
 const SECRET_KEY = process.env.JWT_SECRET_KEY || process.env.JWT_SECRET;
 const ALGORITHM = 'HS256';
@@ -181,76 +186,278 @@ async function updateLastSignIn(userId) {
 }
 
 /**
- * Generate access token with user data
+ * Update user verification status based on channel (email or phone)
+ * @param {string} userId - User ID (UUID string)
+ * @param {string} channel - Verification channel - "email", "sms", or "whatsapp"
+ * @returns {Promise<boolean>} True if successful, False otherwise
+ */
+async function updateUserVerificationStatus(userId, channel) {
+  try {
+    const channelLower = (channel || '').toLowerCase();
+
+    if (channelLower === 'email') {
+      // Verify email
+      await prisma.user.update({
+        where: { user_id: userId },
+        data: {
+          is_email_verified: true,
+          email_verified_at: new Date(),
+          is_verified: true,
+          last_updated: new Date()
+        }
+      });
+      return true;
+    } else if (channelLower === 'sms' || channelLower === 'whatsapp') {
+      // Verify phone
+      await prisma.user.update({
+        where: { user_id: userId },
+        data: {
+          is_phone_verified: true,
+          phone_number_verified_at: new Date(),
+          is_verified: true,
+          last_updated: new Date()
+        }
+      });
+      return true;
+    } else {
+      logger.warn(`Invalid channel for verification update: ${channel} (user: ${userId})`, { module: 'Auth', label: 'UPDATE_VERIFICATION' });
+      return false;
+    }
+  } catch (error) {
+    logger.error('Error updating verification status', { error: error.message, module: 'Auth', label: 'UPDATE_VERIFICATION' });
+    // Don't fail authentication if this fails
+    return false;
+  }
+}
+
+/**
+ * Build user profile payload for tokens
+ * @param {object} user - User object
+ * @returns {object} User profile payload
+ */
+function buildUserProfilePayload(user) {
+  return {
+    user_id: String(user.user_id || user.uid),
+    email: user.email,
+    first_name: user.first_name,
+    last_name: user.last_name,
+    user_name: user.user_name,
+    phone_number: user.phone_number,
+    country: user.country,
+    dob: user.dob ? (user.dob instanceof Date ? user.dob.toISOString() : user.dob) : null,
+    profile_picture_url: user.profile_picture_url,
+    bio: user.bio,
+    auth_type: user.auth_type,
+    theme: user.theme,
+    profile_accessibility: user.profile_accessibility,
+    user_type: user.user_type,
+    language: user.language,
+    status: user.status || 'INACTIVE',
+    timezone: user.timezone,
+    invited_by_user_id: user.invited_by_user_id ? String(user.invited_by_user_id) : null,
+    is_protected: user.is_protected || false,
+    is_trashed: user.is_trashed || false,
+    last_sign_in_at: user.last_sign_in_at ? (user.last_sign_in_at instanceof Date ? user.last_sign_in_at.toISOString() : user.last_sign_in_at) : null,
+    email_verified_at: user.email_verified_at ? (user.email_verified_at instanceof Date ? user.email_verified_at.toISOString() : user.email_verified_at) : null,
+    created_at: user.created_at ? (user.created_at instanceof Date ? user.created_at.toISOString() : user.created_at) : null,
+    last_updated: user.last_updated ? (user.last_updated instanceof Date ? user.last_updated.toISOString() : user.last_updated) : null
+  };
+}
+
+/**
+ * Build permissions payload for tokens
+ * @param {object} user - User object
+ * @returns {object} Permissions payload
+ */
+function buildPermissionsPayload(user) {
+  return {
+    is_active: user.is_active !== undefined ? user.is_active : true,
+    is_verified: user.is_verified !== undefined ? user.is_verified : true
+  };
+}
+
+/**
+ * Generate short-lived access token (1 hour) - Optimized for speed
+ * Minimal payload for faster token generation and validation
  * @param {object} user - User object
  * @param {string} origin - Request origin (optional)
- * @returns {Promise<string>} JWT token
+ * @param {string} sessionId - Session ID (optional)
+ * @returns {string} JWT access token
  */
-async function generateAccessToken(user, origin = null) {
+function generateAccessToken(user, origin = null, sessionId = null) {
   try {
-    const userProfile = {
-      user_id: String(user.user_id || user.uid),
-      email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name,
-      user_name: user.user_name,
-      phone_number: user.phone_number,
-      country: user.country,
-      dob: user.dob ? (user.dob instanceof Date ? user.dob.toISOString() : user.dob) : null,
-      profile_picture_url: user.profile_picture_url,
-      bio: user.bio,
-      theme: user.theme,
-      profile_accessibility: user.profile_accessibility,
-      user_type: user.user_type,
-      language: user.language,
-      status: user.status,
-      timezone: user.timezone,
-      last_sign_in_at: user.last_sign_in_at ? (user.last_sign_in_at instanceof Date ? user.last_sign_in_at.toISOString() : user.last_sign_in_at) : null,
-      email_verified_at: user.email_verified_at ? (user.email_verified_at instanceof Date ? user.email_verified_at.toISOString() : user.email_verified_at) : null,
-      created_at: user.created_at ? (user.created_at instanceof Date ? user.created_at.toISOString() : user.created_at) : null,
-      last_updated: user.last_updated ? (user.last_updated instanceof Date ? user.last_updated.toISOString() : user.last_updated) : null,
-      is_protected: user.is_protected,
-      is_trashed: user.is_trashed,
-      auth_type: user.auth_type,
-      invited_by_user_id: user.invited_by_user_id,
-      is_email_verified: user.is_email_verified,
-      is_phone_verified: user.is_phone_verified
-    };
+    const now = Math.floor(Date.now() / 1000);
+    const exp = now + (ACCESS_TOKEN_EXPIRY * 60);
 
-    // Permissions are determined by groups, not role flags
-    const permissions = {};
-
-    // Fetch groups and permissions from database
-    let groups = [];
-    let permissionCodenames = [];
-    try {
-      const { getUserGroups, getUserPermissions } = require('../permissions/permissions');
-      const userId = String(user.user_id || user.uid);
-      groups = await getUserGroups(userId);
-      const userPerms = await getUserPermissions(userId);
-      permissionCodenames = userPerms.map(p => p.codename);
-    } catch (error) {
-      logger.warn('Error fetching user groups/permissions for token', { error: error.message, module: 'Auth', label: 'TOKEN_GROUPS' });
-    }
-
+    // Lightweight payload - only essential fields for access token
     const payload = {
       sub: String(user.user_id || user.uid),
-      ...userProfile,
-      ...permissions,
-      groups: groups.map(g => g.codename),
-      permissions: permissionCodenames
+      username: user.user_name,
+      email: user.email,
+      exp: exp,
+      iat: now,
+      jti: uuidv4(),
+      type: 'access',
+      aud: 'authenticated',
+      is_active: user.is_active !== undefined ? user.is_active : true,
+      is_verified: user.is_verified !== undefined ? user.is_verified : true
     };
 
     if (origin) {
       payload.origin = origin;
     }
+    if (sessionId) {
+      payload.session_id = sessionId;
+    }
 
-    return generateToken(payload);
+    if (!SECRET_KEY) {
+      throw new Error('JWT_SECRET_KEY environment variable is not set');
+    }
+
+    return jwt.sign(payload, SECRET_KEY, { algorithm: ALGORITHM });
   } catch (error) {
-    logger.error('Token generation error', { error: error.message, module: 'Auth', label: 'TOKEN_GENERATION' });
+    logger.error('Error generating access token', { error: error.message, module: 'Auth', label: 'TOKEN_GENERATION' });
     throw error;
   }
 }
+
+/**
+ * Generate long-lived refresh token (30 days)
+ * @param {object} user - User object
+ * @param {string} origin - Request origin (optional)
+ * @param {string} sessionId - Session ID (optional)
+ * @returns {string} JWT refresh token
+ */
+function generateRefreshToken(user, origin = null, sessionId = null) {
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const exp = now + (REFRESH_TOKEN_EXPIRY * 60);
+
+    const payload = {
+      sub: String(user.user_id || user.uid),
+      exp: exp,
+      iat: now,
+      jti: uuidv4(),
+      type: 'refresh',
+      aud: 'authenticated'
+    };
+
+    if (origin) {
+      payload.origin = origin;
+    }
+    if (sessionId) {
+      payload.session_id = sessionId;
+    }
+
+    if (!SECRET_KEY) {
+      throw new Error('JWT_SECRET_KEY environment variable is not set');
+    }
+
+    return jwt.sign(payload, SECRET_KEY, { algorithm: ALGORITHM });
+  } catch (error) {
+    logger.error('Error generating refresh token', { error: error.message, module: 'Auth', label: 'TOKEN_GENERATION' });
+    throw error;
+  }
+}
+
+/**
+ * Generate medium-lived session token (7 days) with full user profile
+ * @param {object} user - User object
+ * @param {string} origin - Request origin (optional)
+ * @param {string} sessionId - Session ID (optional)
+ * @returns {string} JWT session token
+ */
+function generateSessionToken(user, origin = null, sessionId = null) {
+  try {
+    const userProfile = buildUserProfilePayload(user);
+    const permissions = buildPermissionsPayload(user);
+
+    const now = Math.floor(Date.now() / 1000);
+    const exp = now + (SESSION_TOKEN_EXPIRY * 60);
+
+    const payload = {
+      sub: String(user.user_id || user.uid),
+      username: user.user_name,
+      first_name: user.first_name,
+      last_name: user.last_name,
+      email: user.email,
+      exp: exp,
+      iat: now,
+      jti: uuidv4(),
+      type: 'session',
+      user_profile: userProfile,
+      permissions: permissions,
+      aud: 'authenticated'
+    };
+
+    if (origin) {
+      payload.origin = origin;
+    }
+    if (sessionId) {
+      payload.session_id = sessionId;
+    }
+
+    if (!SECRET_KEY) {
+      throw new Error('JWT_SECRET_KEY environment variable is not set');
+    }
+
+    return jwt.sign(payload, SECRET_KEY, { algorithm: ALGORITHM });
+  } catch (error) {
+    logger.error('Error generating session token', { error: error.message, module: 'Auth', label: 'TOKEN_GENERATION' });
+    throw error;
+  }
+}
+
+/**
+ * Generate all tokens (access, refresh, session) with session_id
+ * Stateless approach - session_id is embedded in tokens, no database storage
+ * @param {object} user - User object
+ * @param {string} origin - Request origin (optional)
+ * @param {object} request - Express request object (optional)
+ * @returns {object} Object with access_token, refresh_token, session_token, and session_id
+ */
+function generateAllTokens(user, origin = null, request = null) {
+  try {
+    // Generate session_id once - this will be embedded in all tokens
+    const sessionId = uuidv4();
+
+    // Generate all tokens with the same session_id
+    const accessToken = generateAccessToken(user, origin, sessionId);
+    const refreshToken = generateRefreshToken(user, origin, sessionId);
+    const sessionToken = generateSessionToken(user, origin, sessionId);
+
+    // No database storage - tokens are stateless
+    // Session invalidation is handled via blacklist in cache
+
+    return {
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      session_token: sessionToken,
+      session_id: sessionId
+    };
+  } catch (error) {
+    logger.error('Error generating all tokens', { error: error.message, module: 'Auth', label: 'TOKEN_GENERATION' });
+    throw error;
+  }
+}
+
+/**
+ * Get user by user_id
+ * @param {string} userId - User ID
+ * @returns {Promise<object|null>} User object or null
+ */
+async function getUserById(userId) {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { user_id: userId }
+    });
+    return user || null;
+  } catch (error) {
+    logger.error('Error fetching user by ID', { error: error.message, module: 'Auth', label: 'FETCH_USER_BY_ID' });
+    return null;
+  }
+}
+
 
 /**
  * Authenticate user and return token
@@ -259,13 +466,13 @@ async function generateAccessToken(user, origin = null) {
  * @param {string} origin - Request origin (optional)
  * @returns {Promise<string|null>} JWT token or null
  */
-async function authenticateUserDjango(identifier, password, origin = null) {
+async function authenticateUserToken(identifier, password, origin = null) {
   try {
     const user = await authenticateUser(identifier, password);
     if (!user) {
       return null;
     }
-    return await generateAccessToken(user, origin);
+    return generateAccessToken(user, origin);
   } catch (error) {
     logger.error('Authentication failed', { error: error.message, module: 'Auth', label: 'AUTH_DJANGO' });
     return null;
@@ -273,21 +480,46 @@ async function authenticateUserDjango(identifier, password, origin = null) {
 }
 
 /**
- * Authenticate user and return token with user data
+ * Authenticate user and return all tokens (access, refresh, session) with user data
+ * Also clears any user-level blacklist entries to allow new sessions after logout
  * @param {string} identifier - Email or phone number
  * @param {string} password - Plain text password
  * @param {string} origin - Request origin (optional)
- * @returns {Promise<object|null>} Object with JWT access_token and user, or null
+ * @param {object} request - Express request object (optional)
+ * @returns {Promise<object|null>} Object with tokens and user, or null
  */
-async function authenticateUserWithData(identifier, password, origin = null) {
+async function authenticateUserWithData(identifier, password, origin = null, request = null) {
   try {
     const user = await authenticateUser(identifier, password);
     if (!user) {
       return null;
     }
-    const accessToken = await generateAccessToken(user, origin);
+
+    const userId = String(user.user_id);
+
+    // Clear user-level blacklist entries BEFORE generating tokens
+    // This ensures that after logout and re-login, the new tokens work immediately
+    try {
+      const {
+        clearUserBlacklist,
+        clearUserRefreshTokenBlacklist
+      } = require('./session_manager');
+      await clearUserBlacklist(userId);
+      await clearUserRefreshTokenBlacklist(userId);
+    } catch (clearError) {
+      // Log but don't fail login if clearing blacklist fails
+      logger.warn(`Failed to clear user blacklist (non-blocking): ${clearError.message}`, { module: 'Auth', label: 'LOGIN' });
+    }
+
+    // Generate all tokens and create session
+    const tokens = generateAllTokens(user, origin, request);
+
+    // Return tokens and user data
     return {
-      access_token: accessToken,
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token,
+      session_token: tokens.session_token,
+      session_id: tokens.session_id,
       user: user
     };
   } catch (error) {
@@ -386,8 +618,13 @@ module.exports = {
   checkUserAvailabilityInDb,
   authenticateUser,
   updateLastSignIn,
+  updateUserVerificationStatus,
   generateAccessToken,
-  authenticateUserDjango,
+  generateRefreshToken,
+  generateSessionToken,
+  generateAllTokens,
+  getUserById,
+  authenticateUserToken,
   authenticateUserWithData,
   updateUserPassword,
   createUserInDb

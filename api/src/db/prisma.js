@@ -23,9 +23,7 @@ const adapter = new PrismaPg(pool);
 // Create base Prisma Client instance with adapter
 const prismaBase = new PrismaClient({
   adapter: adapter,
-  log: process.env.NODE_ENV === 'development' 
-    ? ['query', 'error', 'warn'] 
-    : ['error'],
+  log: ['error', 'warn'], // Query logging disabled - only log errors and warnings
 });
 
 // Extend Prisma Client to auto-assign default "user" group

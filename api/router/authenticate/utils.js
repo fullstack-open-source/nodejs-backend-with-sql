@@ -1,7 +1,6 @@
 /**
  * Authentication Utilities
  * Validation and serialization functions
- * Matches FastAPI router/authenticate/utils.py structure
  */
 
 const { getUserByEmailOrPhone, createUserInDb } = require('../../src/authenticate/checkpoint');

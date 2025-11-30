@@ -61,7 +61,15 @@ async function get(key) {
   }
   try {
     const value = await client.get(key);
-    return value ? JSON.parse(value) : null;
+    if (!value) {
+      return null;
+    }
+    // Try to parse as JSON, if it fails return as string (for blacklist values like "1")
+    try {
+      return JSON.parse(value);
+    } catch (parseError) {
+      return value;
+    }
   } catch (error) {
     logger.error('Cache get error', { error: error.message || error.toString(), key });
     return null;
@@ -80,7 +88,9 @@ async function set(key, value, ttl = 3600) {
     return false;
   }
   try {
-    await client.setEx(key, ttl, JSON.stringify(value));
+    // If value is already a string (like "1" for blacklisting), don't stringify
+    const stringValue = typeof value === 'string' ? value : JSON.stringify(value);
+    await client.setEx(key, ttl, stringValue);
     return true;
   } catch (error) {
     logger.error('Cache set error', { error: error.message || error.toString(), key });

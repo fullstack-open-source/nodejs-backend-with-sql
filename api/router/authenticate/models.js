@@ -1,6 +1,6 @@
 /**
  * Request/Response Models for Authentication
- * Matches FastAPI router/authenticate/models.py structure
+ * Joi validation schemas for authentication endpoints
  */
 
 const Joi = require('joi');
@@ -106,6 +106,22 @@ const userProfileLanguageSchema = Joi.object({
 });
 
 /**
+ * Refresh Token Request Schema
+ */
+const refreshTokenRequestSchema = Joi.object({
+  refresh_token: Joi.string().required().trim()
+});
+
+/**
+ * Token Info Request Schema
+ */
+const tokenInfoRequestSchema = Joi.object({
+  access_token: Joi.string().allow(null, '').optional(),
+  session_token: Joi.string().allow(null, '').optional(),
+  refresh_token: Joi.string().allow(null, '').optional()
+});
+
+/**
  * Validate request data against schema
  * @param {object} data - Data to validate
  * @param {object} schema - Joi schema
@@ -134,6 +150,8 @@ module.exports = {
   changePhoneRequestSchema,
   userProfileAccessibilitySchema,
   userProfileLanguageSchema,
+  refreshTokenRequestSchema,
+  tokenInfoRequestSchema,
   validate
 };
 

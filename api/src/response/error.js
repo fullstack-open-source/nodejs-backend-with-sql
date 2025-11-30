@@ -7,6 +7,7 @@
 const { v4: uuidv4 } = require('uuid');
 const { ERRORS, getError } = require('./map');
 const { isDebugMode, getDebugInfo } = require('../utils/debug');
+const { translateError, getLanguage } = require('../multilingual');
 
 class ErrorResponse {
   /**
@@ -23,11 +24,20 @@ class ErrorResponse {
     const errorId = uuidv4();
     const timestamp = new Date().toISOString();
     
+    // Get language - simple and fast
+    const lang = getLanguage(language);
+    
+    // Get error message
+    const errorMessage = errorDef ? errorDef.message : `Unknown error: ${errorKey}`;
+    
+    // Translate error message
+    const translatedMessage = translateError(errorMessage, lang);
+    
     // Build error object
     const errorObj = {
       id: errorId,
       code: errorDef ? errorDef.code : null,
-      message: errorDef ? errorDef.message : `Unknown error: ${errorKey}`,
+      message: translatedMessage,
       ...(errorDef && errorDef.reason ? { reason: errorDef.reason } : {}),
       ...(errorDef && errorDef.hint ? { hint: errorDef.hint } : {}),
       ...(Object.keys(details).length > 0 ? { details } : {}),
@@ -60,10 +70,16 @@ class ErrorResponse {
     const errorId = uuidv4();
     const timestamp = new Date().toISOString();
     
+    // Get language - simple and fast
+    const lang = getLanguage(language);
+    
+    // Translate error message
+    const translatedMessage = translateError(message, lang);
+    
     const errorObj = {
       id: errorId,
       code: null,
-      message: message,
+      message: translatedMessage,
       ...(Object.keys(data).length > 0 ? { details: data } : {}),
       timestamp: timestamp
     };
@@ -87,16 +103,22 @@ class ErrorResponse {
    * @param {string} exception - Exception message (optional)
    * @returns {object} Formatted error response with HTTP status
    */
-  static fromMap(errorKey, details = {}, exception = null) {
+  static fromMap(errorKey, details = {}, exception = null, language = null) {
     const errorDef = getError(errorKey);
     const errorId = uuidv4();
     const timestamp = new Date().toISOString();
     
+    // Get language - simple and fast
+    const lang = getLanguage(language);
+    
     if (!errorDef) {
+      const errorMessage = `Unknown error: ${errorKey}`;
+      const translatedMessage = translateError(errorMessage, lang);
+      
       const errorObj = {
         id: errorId,
         code: null,
-        message: `Unknown error: ${errorKey}`,
+        message: translatedMessage,
         ...(Object.keys(details).length > 0 ? { details } : {}),
         timestamp: timestamp
       };
@@ -114,11 +136,15 @@ class ErrorResponse {
       };
     }
 
+    // Get error message and translate it
+    const errorMessage = errorDef.message;
+    const translatedMessage = translateError(errorMessage, lang);
+
     // Build error object with all available fields
     const errorObj = {
       id: errorId,
       code: errorDef.code,
-      message: errorDef.message,
+      message: translatedMessage,
       ...(errorDef.reason ? { reason: errorDef.reason } : {}),
       ...(errorDef.hint ? { hint: errorDef.hint } : {}),
       ...(Object.keys(details).length > 0 ? { details } : {}),

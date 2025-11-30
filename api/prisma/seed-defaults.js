@@ -182,6 +182,8 @@ async function seedPermissions() {
   logger.info('Seeding permissions...');
   
   const createdPermissions = {};
+  let createdCount = 0;
+  let skippedCount = 0;
   
   for (const permData of defaultPermissions) {
     try {
@@ -190,20 +192,14 @@ async function seedPermissions() {
       });
       
       if (permission) {
-        permission = await prisma.permission.update({
-          where: { codename: permData.codename },
-          data: {
-            name: permData.name,
-            description: permData.description,
-            category: permData.category
-          }
-        });
-        logger.info(`Permission updated: ${permData.codename}`);
+        logger.info(`Permission already exists, skipping: ${permData.codename}`);
+        skippedCount++;
       } else {
         permission = await prisma.permission.create({
           data: permData
         });
         logger.info(`Permission created: ${permData.codename}`);
+        createdCount++;
       }
       
       createdPermissions[permData.codename] = permission;
@@ -213,7 +209,7 @@ async function seedPermissions() {
     }
   }
   
-  logger.info(`Successfully seeded ${Object.keys(createdPermissions).length} permissions`);
+  logger.info(`Successfully processed permissions: ${createdCount} created, ${skippedCount} skipped`);
   return createdPermissions;
 }
 
@@ -221,6 +217,8 @@ async function seedGroups(permissions) {
   logger.info('Seeding groups...');
   
   const createdGroups = {};
+  let createdCount = 0;
+  let skippedCount = 0;
   
   for (const groupData of defaultGroups) {
     try {
@@ -231,28 +229,22 @@ async function seedGroups(permissions) {
       });
       
       if (group) {
-        group = await prisma.group.update({
-          where: { codename: groupData.codename },
-          data: {
-            name: groupInfo.name,
-            description: groupInfo.description,
-            is_system: groupInfo.is_system,
-            is_active: groupInfo.is_active
-          }
-        });
-        logger.info(`Group updated: ${groupData.codename}`);
+        logger.info(`Group already exists, skipping: ${groupData.codename}`);
+        skippedCount++;
       } else {
         group = await prisma.group.create({
           data: groupInfo
         });
         logger.info(`Group created: ${groupData.codename}`);
+        createdCount++;
       }
       
       createdGroups[groupData.codename] = group;
       
+      // Always check and assign permissions (this function already skips existing relationships)
       if (permCodenames && permCodenames.length > 0) {
         await assignPermissionsToGroup(group.group_id, permCodenames, permissions);
-        logger.info(`Assigned ${permCodenames.length} permissions to group ${groupData.codename}`);
+        logger.info(`Processed ${permCodenames.length} permissions for group ${groupData.codename}`);
       }
     } catch (error) {
       logger.error(`Failed to create group ${groupData.codename}`, { error: error.message });
@@ -260,11 +252,14 @@ async function seedGroups(permissions) {
     }
   }
   
-  logger.info(`Successfully seeded ${Object.keys(createdGroups).length} groups`);
+  logger.info(`Successfully processed groups: ${createdCount} created, ${skippedCount} skipped`);
   return createdGroups;
 }
 
 async function assignPermissionsToGroup(groupId, permissionCodenames, permissionsMap) {
+  let createdCount = 0;
+  let skippedCount = 0;
+  
   for (const codename of permissionCodenames) {
     const permission = permissionsMap[codename];
     if (!permission) {
@@ -289,10 +284,17 @@ async function assignPermissionsToGroup(groupId, permissionCodenames, permission
             permission_id: permission.permission_id
           }
         });
+        createdCount++;
+      } else {
+        skippedCount++;
       }
     } catch (error) {
       logger.error(`Failed to assign permission ${codename} to group`, { error: error.message });
     }
+  }
+  
+  if (createdCount > 0 || skippedCount > 0) {
+    logger.debug(`Group permissions: ${createdCount} created, ${skippedCount} already existed`);
   }
 }
 
@@ -360,6 +362,7 @@ async function assignDefaultGroupsToUsers(groups) {
 async function seed() {
   try {
     logger.info('Starting database seeding...');
+    logger.info('Note: Existing records will be skipped, only new records will be created');
     
     const permissions = await seedPermissions();
     const groups = await seedGroups(permissions);
@@ -367,15 +370,16 @@ async function seed() {
     const userAssignment = await assignDefaultGroupsToUsers(groups);
     
     logger.info('Database seeding completed successfully');
-    logger.info(`Created ${Object.keys(permissions).length} permissions`);
-    logger.info(`Created ${Object.keys(groups).length} groups`);
-    logger.info(`Assigned groups to ${userAssignment.assignedCount} user-group relationships`);
+    logger.info(`Total permissions processed: ${Object.keys(permissions).length}`);
+    logger.info(`Total groups processed: ${Object.keys(groups).length}`);
+    logger.info(`User-group assignments: ${userAssignment.assignedCount} new, ${userAssignment.skippedCount || 0} already existed`);
     
     return {
       permissions: Object.keys(permissions).length,
       groups: Object.keys(groups).length,
       userAssignments: userAssignment.assignedCount,
-      usersProcessed: userAssignment.totalUsers
+      usersProcessed: userAssignment.totalUsers,
+      skippedUserAssignments: userAssignment.skippedCount || 0
     };
   } catch (error) {
     logger.error('Database seeding failed', { error: error.message, stack: error.stack });

@@ -25,7 +25,7 @@ const options = {
     servers: [
       {
         url: process.env.API_URL || `http://localhost:${process.env.PROXY_PORT || process.env.API_INTERNAL_PORT}`,
-        description: process.env.MODE || 'dev/v1'
+        description: process.env.MODE || 'api/dev/v1'
       },
       {
         url: process.env.API_URL || `http://localhost:${process.env.PROXY_PORT || process.env.API_INTERNAL_PORT}`,

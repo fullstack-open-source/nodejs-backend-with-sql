@@ -1,3 +1,8 @@
+/**
+ * Node.js Server - Express Backend
+ * Matching FastAPI Backend Structure
+ * Only includes routers that exist in FastAPI backend
+ */
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -7,42 +12,58 @@ const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 require('express-async-errors');
 
-// Import routers
-const healthRouter = require('./router/health/api');
+// ============================================================
+// ROUTER IMPORTS - Matching FastAPI Backend
+// ============================================================
 const authenticateRouter = require('./router/authenticate/authenticate');
 const profileRouter = require('./router/authenticate/profile');
+const healthRouter = require('./router/health/api');
+const testSentryRouter = require('./router/health/test-sentry');
 const uploadRouter = require('./router/upload/api');
 const dashboardRouter = require('./router/dashboard/api');
 const permissionsRouter = require('./router/permissions/api');
 const activityRouter = require('./router/activity/api');
 
-// Add more routers as needed
-
-
-// Import middleware
+// ============================================================
+// MIDDLEWARE IMPORTS
+// ============================================================
 const { errorHandler } = require('./src/middleware/errorHandler');
 const { requestLogger } = require('./src/middleware/requestLogger');
 const { securityMiddleware } = require('./src/middleware/securityMiddleware');
 
-// Import utilities
+// ============================================================
+// UTILITY IMPORTS
+// ============================================================
 const logger = require('./src/logger/logger');
 const { prisma } = require('./src/db/prisma');
+const { SUCCESS } = require('./src/response/success');
 
-// Import Swagger
+// ============================================================
+// SWAGGER/OPENAPI DOCUMENTATION
+// ============================================================
 const { swaggerSpec, swaggerUi, swaggerOptions } = require('./src/config/swagger');
 
+// ============================================================
+// SENTRY INITIALIZATION
+// ============================================================
+const { initSentry, getRequestHandler, getTracingHandler, getErrorHandler } = require('./src/sentry/sentry');
+const sentry = initSentry();
+
+// ============================================================
+// EXPRESS APP INITIALIZATION
+// ============================================================
 const app = express();
 
-// Initialize Sentry before other middleware
-const { initSentry, getRequestHandler, getTracingHandler, getErrorHandler } = require('./src/sentry/sentry');
-const sentry = initSentry(app);
+// ============================================================
+// ENVIRONMENT VARIABLES
+// ============================================================
 const PORT = process.env.API_INTERNAL_PORT || 3000;
-const MODE = process.env.MODE || 'dev/v1';
+const MODE = process.env.MODE || 'api/dev/v1';
 const API_MODE = process.env.API_MODE || 'development';
 
-// ==============================================================================
-// Middleware Configuration
-// ==============================================================================
+// ============================================================
+// MIDDLEWARE CONFIGURATION
+// ============================================================
 
 // Sentry request handler (must be first)
 if (sentry) {
@@ -59,13 +80,15 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false
 }));
 
-// CORS configuration
+// CORS Configuration - Matching FastAPI Backend
 const corsOptions = {
   origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     
     // Match winsta.ai, winsta.pro and their subdomains, or localhost
+    // Base domain and all subdomains
+    // localhost development
     const allowedOrigins = [
       /^https?:\/\/(.*\.)?winsta\.(ai|pro)$/,
       /^https?:\/\/(127\.0\.0\.1|localhost):(8000|3000)$/
@@ -75,8 +98,8 @@ const corsOptions = {
     callback(null, isAllowed);
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  methods: ['*'],
+  allowedHeaders: ['*']
 };
 
 app.use(cors(corsOptions));
@@ -112,83 +135,56 @@ app.use(limiter);
 // Security middleware
 app.use(securityMiddleware);
 
-// ==============================================================================
-// Swagger/OpenAPI Documentation
-// ==============================================================================
+// ============================================================
+// SWAGGER/OPENAPI DOCUMENTATION
+// ============================================================
+// Swagger documentation is disabled in production (matching FastAPI)
 
-// Swagger JSON endpoint - regenerates spec on each request to pick up new endpoints
-app.get('/api-docs.json', (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  const { getSwaggerSpec } = require('./src/config/swagger');
-  const freshSpec = getSwaggerSpec();
-  res.send(freshSpec);
-});
+if (API_MODE !== 'production') {
+  // Swagger JSON endpoint - regenerates spec on each request to pick up new endpoints
+  app.get('/api-docs.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    const { getSwaggerSpec } = require('./src/config/swagger');
+    const freshSpec = getSwaggerSpec();
+    res.send(freshSpec);
+  });
 
-// Swagger UI endpoint - regenerates spec on each request to pick up new endpoints
-app.use('/api-docs', swaggerUi.serve, (req, res, next) => {
-  // Disable caching for Swagger UI
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
-  
-  const { getSwaggerSpec, swaggerOptions } = require('./src/config/swagger');
-  const freshSpec = getSwaggerSpec();
-  swaggerUi.setup(freshSpec, swaggerOptions)(req, res, next);
-});
+  // Swagger UI endpoint - regenerates spec on each request to pick up new endpoints
+  app.use('/api-docs', swaggerUi.serve, (req, res, next) => {
+    // Disable caching for Swagger UI
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    
+    const { getSwaggerSpec, swaggerOptions } = require('./src/config/swagger');
+    const freshSpec = getSwaggerSpec();
+    swaggerUi.setup(freshSpec, swaggerOptions)(req, res, next);
+  });
+}
 
-// ==============================================================================
-// Routes
-// ==============================================================================
+// ============================================================
+// HEALTH CHECK
+// ============================================================
 
 /**
- * @swagger
- * /health:
- *   get:
- *     summary: Health check endpoint
- *     description: Returns the health status of the API service
- *     tags: [Health & Monitoring]
- *     responses:
- *       200:
- *         description: Service is healthy
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 message:
- *                   type: string
- *                   example: Service is healthy
- *                 data:
- *                   type: object
- *                   properties:
- *                     status:
- *                       type: string
- *                       example: ok
- *                 meta:
- *                   type: object
- *                   properties:
- *                     service:
- *                       type: string
- *                       example: nodejs-backend-with-postgresql-api
- *                     status:
- *                       type: string
- *                       example: ok
- *       500:
- *         description: Health check failed
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
+ * Public health check endpoint with environment info
+ * Does not require database connection to return success
+ * Matching FastAPI Backend structure
  */
-// Health check (public, no authentication)
 app.get('/health', async (req, res) => {
   try {
+    // Check database connection status (non-blocking)
+    let db_status = 'unknown';
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      db_status = 'connected';
+    } catch (dbError) {
+      db_status = `error: ${dbError.message.substring(0, 50)}`;
+    }
+
     const envInfo = {
       API_VERSION: process.env.API_VERSION || 'N/A',
       API_MODE: process.env.API_MODE || 'N/A',
@@ -202,16 +198,19 @@ app.get('/health', async (req, res) => {
     const meta = {
       service: 'nodejs-backend-with-postgresql-api',
       status: 'ok',
+      database: db_status,
       env: envInfo
     };
 
-    return res.status(200).json({
-      success: true,
-      message: 'Service is healthy',
-      data: { status: 'ok' },
-      meta
-    });
+    return res.status(200).json(
+      SUCCESS.response(
+        'Service is healthy',
+        { status: 'ok', database: db_status },
+        meta
+      )
+    );
   } catch (error) {
+    // Even on error, return a response (not an exception)
     logger.error('Health check failed', { error: error.message });
     return res.status(500).json({
       success: false,
@@ -222,29 +221,35 @@ app.get('/health', async (req, res) => {
   }
 });
 
-// API routes with prefix
-// Health router - handles /api/health and /api/health/system
-app.use(`/${MODE}`, healthRouter);
-// Sentry test router - handles /api/health/test-sentry
-const sentryTestRouter = require('./router/health/test-sentry');
-app.use(`/${MODE}`, sentryTestRouter);
-// Authentication router - handles /api/authenticate/*, /api/auth/*, /api/token, /api/logout
+// ============================================================
+// ROUTERS - Matching FastAPI Backend
+// ============================================================
+
+// Authentication Routes
 app.use(`/${MODE}`, authenticateRouter);
-// Profile router - handles /api/settings/* (requires authentication)
+
+// Profile & Settings Routes
 app.use(`/${MODE}`, profileRouter);
-// Wallets router - handles /api/wallet/* (requires authentication)
-// Upload router - handles /api/upload-media, /api/delete-media (requires authentication)
+
+// Health & Monitoring Routes
+app.use(`/${MODE}`, healthRouter);
+app.use(`/${MODE}`, testSentryRouter);
+
+// Upload Routes
 app.use(`/${MODE}`, uploadRouter);
-// Dashboard router - handles /api/dashboard/* (requires authentication)
+
+// Dashboard Routes
 app.use(`/${MODE}`, dashboardRouter);
-// Permissions router - handles /api/permissions/*, /api/groups/*, /api/users/*/groups (requires authentication)
+
+// Permissions & Groups Routes
 app.use(`/${MODE}`, permissionsRouter);
-// Activity router - handles /api/activity/* (requires authentication)
+
+// Activity Logs Routes
 app.use(`/${MODE}/activity`, activityRouter);
 
-// ==============================================================================
-// Error Handling
-// ==============================================================================
+// ============================================================
+// ERROR HANDLING
+// ============================================================
 
 // 404 handler
 app.use((req, res) => {
@@ -263,30 +268,59 @@ if (sentry) {
 // Global error handler
 app.use(errorHandler);
 
-// ==============================================================================
-// Server Startup
-// ==============================================================================
+// ============================================================
+// STARTUP EVENT
+// ============================================================
+
+/**
+ * Initialize services on application startup
+ * Matching FastAPI Backend startup event
+ */
+async function startupEvent() {
+  // Test database connection (non-blocking)
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    logger.info('✅ Database connection initialized', { module: 'Server' });
+  } catch (dbError) {
+    logger.warn('⚠️  Database connection not available yet (will retry on first use)', {
+      module: 'Server',
+      error: dbError.message
+    });
+    // Continue startup even if database fails (for health checks, etc.)
+  }
+
+  // Initialize cache (for token blacklisting)
+  try {
+    const cache = require('./src/cache/cache');
+    // Cache connection is handled automatically in cache.js
+    // Just verify it's available
+    if (cache && cache.client) {
+      logger.info('✅ Cache initialized', { module: 'Server' });
+    }
+  } catch (cacheError) {
+    logger.warn('⚠️  Cache initialization failed (will use in-memory fallback)', {
+      module: 'Server',
+      error: cacheError.message
+    });
+  }
+
+  // Note: Database schema is managed via Prisma
+  // Use 'npm run db:pull' to pull schema from remote
+  // Use 'npm run db:push' to push schema to database
+}
+
+// ============================================================
+// SERVER STARTUP
+// ============================================================
 
 // Start server
 async function startServer() {
   try {
-    // Test database connection (lazy initialization)
-    try {
-      await prisma.$queryRaw`SELECT 1`;
-      logger.info('Database connection initialized');
-    } catch (dbError) {
-      logger.warn('Database connection test failed, continuing without database', { 
-        error: dbError.message 
-      });
-      // Continue startup even if database fails (for health checks, etc.)
-    }
-    
-    // Note: Database schema is managed via Prisma
-    // Use 'npm run db:pull' to pull schema from remote
-    // Use 'npm run db:push' to push schema to database
+    // Run startup event
+    await startupEvent();
   } catch (error) {
-    logger.error('Failed to initialize database', { error: error.message });
-    // Continue startup even if database fails (for health checks, etc.)
+    logger.error('Failed during startup event', { error: error.message });
+    // Continue startup even if startup event fails
   }
   
   app.listen(PORT, '0.0.0.0', () => {

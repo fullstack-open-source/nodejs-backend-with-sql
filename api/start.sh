@@ -1,4 +1,5 @@
-#!/bin/sh
+#!/bin/bash
+set -euo pipefail
 
 # ==============================================================================
 # Node.js backend start script with PM2 and Prisma setup
@@ -35,25 +36,34 @@ if [ -f .env ]; then
 fi
 
 # ------------------------------------------------------------------------------
+# Ensure Prisma Client is generated (if needed)
+# ------------------------------------------------------------------------------
+echo "Ensuring Prisma Client is generated..."
+if [ ! -d "node_modules/.prisma/client" ] || [ ! -d "node_modules/@prisma/client" ]; then
+    echo "Prisma Client not found, generating..."
+    DATABASE_URL="${DATABASE_URL:-postgresql://dummy:dummy@localhost:5432/dummy}" npx prisma generate || {
+        echo "Warning: Prisma generate failed, but continuing..."
+    }
+fi
+
+# ------------------------------------------------------------------------------
 # Run Prisma DB push + seed ONLY in development
 # ------------------------------------------------------------------------------
 if [ "$API_MODE" = "development" ]; then
     echo "Running Prisma steps (dev only)..."
 
     echo "Running Prisma DB push..."
-    npx prisma db push --accept-data-loss
-    if [ $? -ne 0 ]; then
+    npx prisma db push --accept-data-loss || {
         echo "Error: Prisma db push failed!"
         exit 1
-    fi
+    }
 
-    if [ -f prisma/seed.js ]; then
-        echo "Running Prisma seed script..."
-        node prisma/seed.js
-        if [ $? -ne 0 ]; then
-            echo "Warning: Prisma seed failed, continuing..."
-        fi
-    fi
+    # if [ -f prisma/seed.js ]; then
+    #     echo "Running Prisma seed script..."
+    #     node prisma/seed.js seed || {
+    #         echo "Warning: Prisma seed failed, continuing..."
+    #     }
+    # fi
 else
     echo "Skipping Prisma steps (not dev mode)"
 fi

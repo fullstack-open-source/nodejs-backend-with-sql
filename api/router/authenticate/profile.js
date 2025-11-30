@@ -1,6 +1,6 @@
 /**
  * Profile Management Router
- * All profile endpoints matching FastAPI router/authenticate/profile.py
+ * Handles user profile management endpoints
  */
 
 const express = require('express');

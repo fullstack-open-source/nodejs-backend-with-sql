@@ -17,6 +17,8 @@ This router handles all user authentication operations including login, registra
   - [Change Password](#change-password)
   - [Forget Password](#forget-password)
   - [Logout](#logout)
+  - [Refresh Token](#refresh-token)
+  - [Token Info](#token-info)
   - [Check User Availability](#check-user-availability)
   - [Verify Email and Phone](#verify-email-and-phone)
 - [Workflows](#workflows)
@@ -30,10 +32,12 @@ The Authentication router provides comprehensive user authentication functionali
 - **User Registration**: Account creation with OTP verification
 - **Password Management**: Set, change, and reset passwords
 - **User Verification**: Email and phone number verification
+- **Token Management**: Multi-token system (access, refresh, session) with token rotation
+- **Session Management**: Session-based authentication with comprehensive token revocation
 
 **Base Path:** `/{MODE}/auth` or `/{MODE}/token` or `/{MODE}/logout`
 
-**Authentication:** Most endpoints do not require authentication (except password change and logout)
+**Authentication:** Most endpoints do not require authentication (except password change, logout, and token-info)
 
 ## Endpoints
 
@@ -60,7 +64,16 @@ The Authentication router provides comprehensive user authentication functionali
   "message": "Login successful",
   "data": {
     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "token_type": "bearer"
+    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "session_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "session_id": "uuid",
+    "token_type": "bearer",
+    "user": {
+      "user_id": "uuid",
+      "email": "user@example.com",
+      "first_name": "John",
+      "last_name": "Doe"
+    }
   }
 }
 ```
@@ -79,13 +92,14 @@ The Authentication router provides comprehensive user authentication functionali
    │   ├─► Check User Status (is_active, is_verified)
    │   └─► Update Last Sign-in
    │
-   ├─► Generate JWT Token
-   │   ├─► Include User ID
-   │   ├─► Include Permissions
-   │   ├─► Set Expiration (JWT_EXPIRES_IN)
+   ├─► Generate All Tokens
+   │   ├─► Generate Access Token
+   │   ├─► Generate Refresh Token
+   │   ├─► Generate Session Token
+   │   ├─► Create Session ID
    │   └─► Sign with JWT_SECRET
    │
-   └─► Return Access Token
+   └─► Return All Tokens + User Data
 ```
 
 **Use Cases:**
@@ -232,6 +246,9 @@ The Authentication router provides comprehensive user authentication functionali
   "message": "Login successful",
   "data": {
     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "session_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "session_id": "uuid",
     "token_type": "bearer",
     "user": {
       "user_id": "uuid",
@@ -266,10 +283,13 @@ The Authentication router provides comprehensive user authentication functionali
    ├─► Update Last Sign-in
    │   └─► updateLastSignIn()
    │
-   ├─► Generate Access Token
-   │   └─► generateAccessToken()
+   ├─► Generate All Tokens
+   │   ├─► Generate Access Token
+   │   ├─► Generate Refresh Token
+   │   ├─► Generate Session Token
+   │   └─► Create Session ID
    │
-   └─► Return Token + User Data
+   └─► Return All Tokens + User Data
 ```
 
 **Use Cases:**
@@ -303,6 +323,9 @@ The Authentication router provides comprehensive user authentication functionali
   "message": "Signup successful",
   "data": {
     "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "session_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "session_id": "uuid",
     "token_type": "bearer",
     "user": { ... }
   }
@@ -350,13 +373,16 @@ The Authentication router provides comprehensive user authentication functionali
    ├─► Assign Groups (if master OTP)
    │   └─► Assign admin group
    │
-   ├─► Authenticate User
-   │   └─► authenticateUserWithData()
+   ├─► Generate All Tokens
+   │   ├─► Generate Access Token
+   │   ├─► Generate Refresh Token
+   │   ├─► Generate Session Token
+   │   └─► Create Session ID
    │
    ├─► Delete OTP (if not master OTP)
    │   └─► verifyOtp(consume=true)
    │
-   └─► Return Access Token + User Data
+   └─► Return All Tokens + User Data
 ```
 
 **Special Features:**
@@ -554,16 +580,31 @@ The Authentication router provides comprehensive user authentication functionali
 
 ### Logout
 
-**Endpoint:** `POST /{MODE}/logout`
+**Endpoint:** `POST /{MODE}/auth/logout` or `POST /{MODE}/logout` (deprecated)
 
-**Description:** Logout user. Returns user data (token invalidation handled client-side).
+**Description:** Logout user and revoke all tokens and sessions. The `/auth/logout` endpoint performs comprehensive token revocation, while `/logout` is deprecated and only returns user data.
 
 **Authentication:** Required
 **Permission:** `view_profile`
 
 **Request Body:** None
 
-**Response:**
+**Response (`/auth/logout`):**
+```json
+{
+  "success": true,
+  "message": "Logged out successfully. All tokens and sessions have been revoked.",
+  "data": {
+    "message": "Logged out successfully",
+    "access_token_revoked": true,
+    "refresh_tokens_revoked": true,
+    "sessions_revoked": true,
+    "tokens_revoked": true
+  }
+}
+```
+
+**Response (`/logout` - deprecated):**
 ```json
 {
   "success": true,
@@ -577,24 +618,203 @@ The Authentication router provides comprehensive user authentication functionali
 }
 ```
 
+**Workflow (`/auth/logout`):**
+```
+1. Authenticated Request
+   │
+   ├─► Validate JWT Token
+   │
+   ├─► Extract Token JTI
+   │   └─► Decode token to get JTI
+   │
+   ├─► Blacklist Access Token
+   │   └─► blacklistAccessTokenByJti()
+   │
+   ├─► Revoke All Refresh Tokens
+   │   └─► revokeAllUserRefreshTokens()
+   │
+   ├─► Revoke All Sessions
+   │   └─► blacklistAllUserSessions()
+   │
+   └─► Return Revocation Status
+```
+
+**Note:** The `/auth/logout` endpoint performs server-side token revocation using Redis blacklisting. All tokens and sessions are invalidated immediately. The deprecated `/logout` endpoint only returns user data without revoking tokens.
+
+**Use Cases:**
+- User logout
+- Session termination
+- Security logout
+- Multi-device logout
+
+---
+
+### Refresh Token
+
+**Endpoint:** `POST /{MODE}/auth/refresh-token`
+
+**Description:** Refresh access, refresh, and session tokens using a valid refresh token. Implements token rotation - old tokens are blacklisted and new tokens are generated with a new session ID.
+
+**Authentication:** Not required (refresh token in request body)
+
+**Request Body:**
+```json
+{
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Tokens refreshed successfully",
+  "data": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "session_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "session_id": "uuid",
+    "token_type": "bearer"
+  }
+}
+```
+
+**Workflow:**
+```
+1. Client Request
+   │
+   ├─► Validate Request
+   │   └─► refresh_token required
+   │
+   ├─► Decode Refresh Token
+   │   ├─► Verify JWT signature
+   │   ├─► Check token type (must be "refresh")
+   │   └─► Extract user_id and session_id
+   │
+   ├─► Get User from Database
+   │   └─► getUserById()
+   │
+   ├─► Token Rotation
+   │   ├─► Blacklist old refresh token
+   │   └─► Blacklist old session (invalidates all old tokens)
+   │
+   ├─► Generate New Tokens
+   │   ├─► Generate new access token
+   │   ├─► Generate new refresh token
+   │   ├─► Generate new session token
+   │   └─► Create new session ID
+   │
+   └─► Return New Tokens
+```
+
+**Token Rotation:** The refresh endpoint implements token rotation for security. When refreshing, the old refresh token and session are blacklisted, and completely new tokens with a new session ID are generated.
+
+**Use Cases:**
+- Token renewal
+- Session extension
+- Security token rotation
+
+---
+
+### Token Info
+
+**Endpoint:** `GET /{MODE}/auth/token-info` or `POST /{MODE}/auth/token-info`
+
+**Description:** Get detailed information about authentication tokens including age, expiration, type, and status. The POST endpoint allows comparing tokens from the request body with the current token.
+
+**Authentication:** Required
+
+**Request Body (POST only, optional):**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "session_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Token information retrieved successfully",
+  "data": {
+    "token_ages": {
+      "current": {
+        "token_type": "access",
+        "token_age": "30 minutes",
+        "token_age_minutes": 30,
+        "expires_in": "30 minutes",
+        "expires_in_minutes": 30,
+        "lifetime_percentage_used": 50.0,
+        "status": "ACTIVE"
+      },
+      "access_token": { ... },
+      "session_token": { ... },
+      "refresh_token": { ... }
+    },
+    "token_configuration": {
+      "access_token": {
+        "expiry_minutes": 60,
+        "expires_in": "1 hour"
+      },
+      "session_token": {
+        "expiry_minutes": 10080,
+        "expires_in": "7 days"
+      },
+      "refresh_token": {
+        "expiry_minutes": 43200,
+        "expires_in": "30 days"
+      }
+    },
+    "extension_info": {
+      "current_expires_in": "30 minutes",
+      "after_refresh_expires_in": "1 hour",
+      "extension_minutes": 60
+    }
+  }
+}
+```
+
 **Workflow:**
 ```
 1. Authenticated Request
    │
    ├─► Validate JWT Token
    │
-   ├─► Serialize User Data
-   │   └─► serializeUserData(req.user)
+   ├─► Extract Tokens
+   │   ├─► From Authorization header (Bearer)
+   │   ├─► From X-Session-Token header
+   │   └─► From request body (POST only)
    │
-   └─► Return User Data
+   ├─► Decode All Tokens
+   │   ├─► Extract token type
+   │   ├─► Calculate token age
+   │   ├─► Calculate expiration time
+   │   └─► Determine status (ACTIVE/EXPIRED)
+   │
+   ├─► Get Token Configuration
+   │   └─► From environment variables
+   │
+   ├─► Calculate Extension Info
+   │   └─► If token refreshed, show extension details
+   │
+   └─► Return Token Information
 ```
 
-**Note:** JWT tokens are stateless. Token invalidation should be handled client-side by removing the token from storage.
+**Token Information Includes:**
+- **Token Age**: How long the token has been active
+- **Expiration**: Time until token expires
+- **Lifetime Percentage**: Percentage of token lifetime used
+- **Status**: ACTIVE or EXPIRED
+- **Token Type**: access, refresh, or session
+- **Session ID**: Associated session identifier
 
 **Use Cases:**
-- User logout
-- Session termination
-- Security logout
+- Token debugging
+- Token expiration monitoring
+- Security auditing
+- Token comparison
 
 ---
 

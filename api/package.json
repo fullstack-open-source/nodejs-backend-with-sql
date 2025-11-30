@@ -1,7 +1,7 @@
 {
   "name": "nodejs-backend-with-postgresql",
   "version": "1.0.0",
-  "description": "Node.js Backend API - Express Version",
+  "description": "Node.js Backend - Express Version",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

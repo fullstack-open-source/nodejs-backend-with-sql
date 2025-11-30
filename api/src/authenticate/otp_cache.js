@@ -1,13 +1,21 @@
 /**
  * OTP Cache Management
  * Handles OTP generation, storage, and verification
- * Matches FastAPI otp_cache.py structure
  */
 
 const cache = require('../cache/cache');
 const { randomInt } = require('crypto');
 
-const MASTER_OTP = process.env.MASTER_OTP || '123456';
+const MASTER_OTP = process.env.MASTER_OTP || process.env.MASTER_ADMIN_OTP || '1408199';
+
+/**
+ * Check if the provided OTP is the master OTP
+ * @param {string} otp - OTP to check
+ * @returns {boolean} True if OTP matches MASTER_OTP, False otherwise
+ */
+function isMasterOtp(otp) {
+  return otp === MASTER_OTP;
+}
 
 /**
  * Generate numeric OTP of given length (default: 6)
@@ -45,15 +53,15 @@ async function setOtp(userId, ttl = 600) {
 async function verifyOtp(userId, otp, deleteAfterVerify = true) {
   const storedOtp = await cache.get(`otp:${userId}`);
   
-  // Master OTP check
-  if (otp === MASTER_OTP) {
+  // 1. Master OTP check
+  if (isMasterOtp(otp)) {
     return true;
   }
   
-  // Normal OTP check
+  // 2. Normal OTP check
   if (storedOtp && storedOtp === otp) {
     if (deleteAfterVerify) {
-      await cache.delete(`otp:${userId}`);
+      await cache.del(`otp:${userId}`);
     }
     return true;
   }
@@ -97,6 +105,7 @@ module.exports = {
   setOtp,
   verifyOtp,
   verifyOtpKeep,
-  deleteOtp
+  deleteOtp,
+  isMasterOtp
 };
 
