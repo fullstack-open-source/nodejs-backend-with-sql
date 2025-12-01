@@ -3,6 +3,12 @@ services:
     build:
       context: ./api
       dockerfile: Dockerfile
+      args:
+        API_INTERNAL_PORT: ${API_INTERNAL_PORT:-3000}
+        PRISMA_STUDIO_PORT: ${PRISMA_STUDIO_PORT:-9081}
+        API_MODE: ${API_MODE:-development}
+        MODE: ${MODE:-api/dev/v1}
+        API_VERSION: ${API_VERSION:-1.0.0}
     image: mrdasdeveloper/nodejs-backend-with-postgresql:base
     container_name: nodejs-backend
     restart: unless-stopped
@@ -10,8 +16,8 @@ services:
     # volumes:
     #   - ./api:/api
     ports:
-      - "${API_DEBUG_PORT:-8900}:3000"
-      - "${PRISMA_STUDIO_PORT:-8901}:51212"
+      - "${API_DEBUG_PORT:-3000}:3000"
+      - "${PRISMA_STUDIO_PORT:-9081}:${PRISMA_STUDIO_PORT:-9081}"
     networks:
       - nodejs_backend_with_postgresql_network
     depends_on:

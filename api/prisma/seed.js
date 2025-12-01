@@ -6,6 +6,7 @@
 const { execSync } = require('child_process');
 const path = require('path');
 const logger = require('../src/logger/logger');
+const { prisma } = require('../src/db/prisma');
 
 /**
  * Pull schema from remote database
@@ -83,9 +84,14 @@ async function seed() {
     const { seed: seedDefaults } = require('./seed-defaults');
     await seedDefaults();
     
+    // Disconnect Prisma after seeding to prevent hanging
+    await prisma.$disconnect();
+    
     logger.info('Database seeded successfully');
   } catch (error) {
     logger.error('Failed to seed database', { error: error.message });
+    // Disconnect even on error
+    await prisma.$disconnect().catch(() => {});
     throw error;
   }
 }

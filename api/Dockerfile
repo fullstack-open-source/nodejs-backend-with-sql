@@ -55,6 +55,15 @@ RUN npm prune --production && \
 # ==============================================================================
 FROM node:20-alpine AS production
 
+# ==============================================================================
+# Build Arguments (can be passed during docker build)
+# ==============================================================================
+ARG API_INTERNAL_PORT=3000
+ARG PRISMA_STUDIO_PORT=9081
+ARG API_MODE=development
+ARG MODE=api/dev/v1
+ARG API_VERSION=1.0.0
+
 LABEL maintainer="mrdas" \
       version="1.0" \
       description="Node.js Backend API - Production Image" \
@@ -62,8 +71,16 @@ LABEL maintainer="mrdas" \
       org.opencontainers.image.description="Production-ready Node.js/Express backend API" \
       org.opencontainers.image.version="1.0.0"
 
+# ==============================================================================
+# Environment Variables (runtime, can be overridden by docker-compose)
+# ==============================================================================
 ENV NODE_ENV=production \
-    PATH="/api/node_modules/.bin:$PATH"
+    PATH="/api/node_modules/.bin:$PATH" \
+    API_INTERNAL_PORT=${API_INTERNAL_PORT} \
+    PRISMA_STUDIO_PORT=${PRISMA_STUDIO_PORT} \
+    API_MODE=${API_MODE} \
+    MODE=${MODE} \
+    API_VERSION=${API_VERSION}
 
 RUN apk add --no-cache \
     curl \
@@ -120,11 +137,15 @@ RUN chmod +x /api/start.sh && \
 
 USER mrdas
 
-EXPOSE 3000 51212
+# Expose ports dynamically from build arguments
+# These can be overridden via docker-compose build args or --build-arg
+EXPOSE ${API_INTERNAL_PORT} ${PRISMA_STUDIO_PORT}
 
-# Health check
+
+# Health check (uses ENV variable set from ARG)
+# Using shell form - $API_INTERNAL_PORT expands from ENV at runtime
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:3000/health || exit 1
+    CMD sh -c "curl -f http://localhost:\${API_INTERNAL_PORT}/health || exit 1"
 
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["/api/start.sh"]

@@ -43,20 +43,25 @@ const { captureException, captureMessage } = require('../../src/sentry/sentry');
  */
 router.get('/health', async (req, res) => {
   try {
+
+    const baseUrl = `${process.env.API_HOST || 'localhost'}:${process.env.PROXY_PORT || 8900}`;
+    const mode = process.env.MODE || 'api/dev/v1';
+
     const envInfo = {
       API_VERSION: process.env.API_VERSION || 'N/A',
       API_MODE: process.env.API_MODE || 'N/A',
-      MODE: process.env.MODE || 'N/A',
+      API_URL: baseUrl,
+      MODE: mode,
       UTC: process.env.UTC || 'N/A',
       DEBUG_MODE: process.env.DEBUG_MODE || 'N/A',
       TIMEZONE: process.env.TIMEZONE || 'N/A',
-      LOG_LEVEL: process.env.LOG_LEVEL || 'N/A'
+      LOG_LEVEL: process.env.LOG_LEVEL || 'N/A',
     };
 
     const meta = {
       service: 'nodejs-backend-with-postgresql-api',
       status: 'ok',
-      env: envInfo
+      env: envInfo  
     };
 
     return res.status(200).json(
@@ -115,7 +120,8 @@ router.get('/health', async (req, res) => {
 router.get('/health/system', async (req, res) => {
   try {
     const os = require('os');
-    
+    const baseUrl = `${process.env.API_HOST || 'localhost'}:${process.env.PROXY_PORT || 8900}`;
+    const mode = process.env.MODE || 'api/dev/v1';
     const systemInfo = {
       platform: process.platform,
       nodeVersion: process.version,
@@ -129,7 +135,8 @@ router.get('/health/system', async (req, res) => {
     const envInfo = {
       API_VERSION: process.env.API_VERSION || 'N/A',
       API_MODE: process.env.API_MODE || 'N/A',
-      MODE: process.env.MODE || 'N/A',
+      API_URL: baseUrl,
+      MODE: mode,
       DEBUG_MODE: process.env.DEBUG_MODE || 'N/A',
       LOG_LEVEL: process.env.LOG_LEVEL || 'N/A'
     };

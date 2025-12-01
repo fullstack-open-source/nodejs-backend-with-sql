@@ -58,12 +58,30 @@ if [ "$API_MODE" = "development" ]; then
         exit 1
     }
 
-    # if [ -f prisma/seed.js ]; then
-    #     echo "Running Prisma seed script..."
-    #     node prisma/seed.js seed || {
-    #         echo "Warning: Prisma seed failed, continuing..."
-    #     }
-    # fi
+    if [ -f prisma/seed.js ]; then
+        echo "Running Prisma seed script..."
+        # Run seed with timeout (5 minutes max)
+        timeout 120 node prisma/seed.js seed || {
+            SEED_EXIT_CODE=$?
+            if [ $SEED_EXIT_CODE -eq 124 ]; then
+                echo "Warning: Prisma seed timed out after 5 minutes, continuing..."
+            else
+                echo "Warning: Prisma seed failed (exit code: $SEED_EXIT_CODE), continuing..."
+            fi
+        }
+    fi
+
+    # ------------------------------------------------------------------------------
+    # Start Prisma Studio (Database Dashboard) in development mode
+    # ------------------------------------------------------------------------------
+    echo "Starting Prisma Studio (Database Dashboard)..."
+    # Use PRISMA_STUDIO_PORT env var (set from Dockerfile/docker-compose) with default 51212
+    # This is the container port where Prisma Studio will run
+    PRISMA_STUDIO_CONTAINER_PORT=${PRISMA_STUDIO_PORT:-51212}
+    npx prisma studio --port ${PRISMA_STUDIO_CONTAINER_PORT} --browser none > /dev/null 2>&1 &
+    PRISMA_STUDIO_PID=$!
+    echo "✅ Prisma Studio started on port ${PRISMA_STUDIO_CONTAINER_PORT} (PID: $PRISMA_STUDIO_PID)"
+    echo "   Access Prisma Studio at: http://localhost:${PRISMA_STUDIO_PORT:-8901} (from host machine)"
 else
     echo "Skipping Prisma steps (not dev mode)"
 fi

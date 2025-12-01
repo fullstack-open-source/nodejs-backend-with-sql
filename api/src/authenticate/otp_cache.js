@@ -5,6 +5,7 @@
 
 const cache = require('../cache/cache');
 const { randomInt } = require('crypto');
+const logger = require('../logger/logger');
 
 const MASTER_OTP = process.env.MASTER_OTP || process.env.MASTER_ADMIN_OTP || '1408199';
 
@@ -38,9 +39,33 @@ function generateOtp(length = 6) {
  * @returns {Promise<string>} Generated OTP
  */
 async function setOtp(userId, ttl = 600) {
+  // Normalize userId: trim whitespace and lowercase emails
+  const normalizedUserId = normalizeUserId(userId);
   const otp = generateOtp();
-  await cache.set(`otp:${userId}`, otp, ttl);
+  const cacheKey = `otp:${normalizedUserId}`;
+  const success = await cache.set(cacheKey, otp, ttl);
+  if (!success) {
+    logger.error('Failed to store OTP in cache', { userId: normalizedUserId, cacheKey });
+  } else {
+    logger.info('OTP stored in cache', { userId: normalizedUserId, cacheKey, otpLength: otp.length });
+  }
   return otp;
+}
+
+/**
+ * Normalize user ID for consistent cache key generation
+ * @param {string} userId - User ID (email or phone)
+ * @returns {string} Normalized user ID
+ */
+function normalizeUserId(userId) {
+  if (!userId) return userId;
+  // Trim whitespace
+  let normalized = userId.trim();
+  // Lowercase emails (emails are case-insensitive)
+  if (normalized.includes('@')) {
+    normalized = normalized.toLowerCase();
+  }
+  return normalized;
 }
 
 /**
@@ -51,20 +76,52 @@ async function setOtp(userId, ttl = 600) {
  * @returns {Promise<boolean>} True if valid, False otherwise
  */
 async function verifyOtp(userId, otp, deleteAfterVerify = true) {
-  const storedOtp = await cache.get(`otp:${userId}`);
+  // Normalize userId for consistent cache key lookup
+  const normalizedUserId = normalizeUserId(userId);
+  const cacheKey = `otp:${normalizedUserId}`;
+  
+  // Ensure OTP is a string for comparison
+  const otpString = String(otp).trim();
   
   // 1. Master OTP check
-  if (isMasterOtp(otp)) {
+  if (isMasterOtp(otpString)) {
+    logger.info('Master OTP verified', { userId: normalizedUserId });
     return true;
   }
   
-  // 2. Normal OTP check
-  if (storedOtp && storedOtp === otp) {
+  // 2. Get stored OTP from cache
+  const storedOtp = await cache.get(cacheKey);
+  
+  // Log for debugging
+  if (!storedOtp) {
+    logger.warn('OTP not found in cache', { 
+      userId: normalizedUserId, 
+      cacheKey,
+      providedOtp: otpString 
+    });
+    return false;
+  }
+  
+  // Ensure stored OTP is a string for comparison
+  const storedOtpString = String(storedOtp).trim();
+  
+  // 3. Normal OTP check (compare as strings)
+  if (storedOtpString === otpString) {
+    logger.info('OTP verified successfully', { userId: normalizedUserId });
     if (deleteAfterVerify) {
-      await cache.del(`otp:${userId}`);
+      await cache.del(cacheKey);
     }
     return true;
   }
+  
+  logger.warn('OTP mismatch', { 
+    userId: normalizedUserId, 
+    cacheKey,
+    providedOtp: otpString,
+    storedOtp: storedOtpString,
+    storedOtpType: typeof storedOtp,
+    providedOtpType: typeof otp
+  });
   
   return false;
 }
@@ -77,13 +134,15 @@ async function verifyOtp(userId, otp, deleteAfterVerify = true) {
  * @returns {Promise<boolean>} True if valid
  */
 async function verifyOtpKeep(userId, otp, deleteAfterVerify = true) {
-  const stored = await cache.get(`otp:${userId}`);
+  // Normalize userId for consistent cache key lookup
+  const normalizedUserId = normalizeUserId(userId);
+  const stored = await cache.get(`otp:${normalizedUserId}`);
   if (!stored || stored !== otp) {
     return false;
   }
   
   if (deleteAfterVerify) {
-    await cache.delete(`otp:${userId}`);
+    await cache.del(`otp:${normalizedUserId}`);
   }
   
   return true;
@@ -96,7 +155,9 @@ async function verifyOtpKeep(userId, otp, deleteAfterVerify = true) {
  * @returns {Promise<boolean>} True if deleted
  */
 async function deleteOtp(userId, otp = null) {
-  await cache.del(`otp:${userId}`);
+  // Normalize userId for consistent cache key lookup
+  const normalizedUserId = normalizeUserId(userId);
+  await cache.del(`otp:${normalizedUserId}`);
   return true;
 }
 

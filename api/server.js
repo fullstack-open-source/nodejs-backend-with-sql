@@ -57,6 +57,7 @@ const app = express();
 // ============================================================
 // ENVIRONMENT VARIABLES
 // ============================================================
+// Server listens on internal port (3000), PROXY_PORT is for nginx (9080)
 const PORT = process.env.API_INTERNAL_PORT || 3000;
 const MODE = process.env.MODE || 'api/dev/v1';
 const API_MODE = process.env.API_MODE || 'development';
@@ -185,10 +186,14 @@ app.get('/health', async (req, res) => {
       db_status = `error: ${dbError.message.substring(0, 50)}`;
     }
 
+    const baseUrl = `${process.env.API_HOST || 'localhost'}:${process.env.PROXY_PORT || 8900}`;
+    const mode = process.env.MODE || 'api/dev/v1';
+
     const envInfo = {
       API_VERSION: process.env.API_VERSION || 'N/A',
       API_MODE: process.env.API_MODE || 'N/A',
-      MODE: process.env.MODE || 'N/A',
+      API_URL: baseUrl,
+      MODE: mode,
       UTC: process.env.UTC || 'N/A',
       DEBUG_MODE: process.env.DEBUG_MODE || 'N/A',
       TIMEZONE: process.env.TIMEZONE || 'N/A',
@@ -199,6 +204,8 @@ app.get('/health', async (req, res) => {
       service: 'nodejs-backend-with-postgresql-api',
       status: 'ok',
       database: db_status,
+      API_URL: baseUrl,
+      MODE: mode,
       env: envInfo
     };
 
@@ -280,7 +287,6 @@ async function startupEvent() {
   // Test database connection (non-blocking)
   try {
     await prisma.$queryRaw`SELECT 1`;
-    logger.info('✅ Database connection initialized', { module: 'Server' });
   } catch (dbError) {
     logger.warn('⚠️  Database connection not available yet (will retry on first use)', {
       module: 'Server',
